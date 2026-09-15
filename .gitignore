@@ -1,0 +1,5 @@
+# The private design journal records server details and must never be published.
+docs/journal/
+
+# Machine-specific Claude Code permissions.
+.claude/settings.local.json
