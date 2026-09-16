@@ -1,0 +1,70 @@
+name: Node checks
+
+# Shared checks for a Node Target. Called by an Onboarded repo like this:
+#
+#   jobs:
+#     frontend:
+#       uses: ethichadebe/workflows/.github/workflows/node-checks.yml@main
+#       with:
+#         working-directory: frontend
+#         lint: npm run lint
+#         test: npm run test:run
+#         build: npm run build
+#
+# Leave a command out and that step is skipped, so a repo without tests yet can
+# still run lint and build.
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Folder holding package.json
+        required: true
+        type: string
+      node-version:
+        required: false
+        type: string
+        default: "22"
+      install:
+        required: false
+        type: string
+        default: npm ci
+      lint:
+        required: false
+        type: string
+        default: ""
+      test:
+        required: false
+        type: string
+        default: ""
+      build:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install
+        run: ${{ inputs.install }}
+
+      - name: Lint
+        if: inputs.lint != ''
+        run: ${{ inputs.lint }}
+
+      - name: Test
+        if: inputs.test != ''
+        run: ${{ inputs.test }}
+
+      - name: Build
+        if: inputs.build != ''
+        run: ${{ inputs.build }}

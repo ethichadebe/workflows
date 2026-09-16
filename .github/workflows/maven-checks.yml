@@ -1,0 +1,45 @@
+name: Maven checks
+
+# Shared checks for a Java Target built with Maven. Called like this:
+#
+#   jobs:
+#     backend:
+#       uses: ethichadebe/workflows/.github/workflows/maven-checks.yml@main
+#       with:
+#         working-directory: backend/api
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Folder holding pom.xml
+        required: true
+        type: string
+      java-version:
+        required: false
+        type: string
+        default: "21"
+      test:
+        required: false
+        type: string
+        default: ./mvnw -B test
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+          cache: maven
+
+      - name: Make the wrapper executable
+        run: chmod +x mvnw || true
+
+      - name: Test
+        run: ${{ inputs.test }}
