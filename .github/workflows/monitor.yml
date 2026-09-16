@@ -1,0 +1,70 @@
+name: Monitor live sites
+
+# Runs from GitHub, not from the server being watched, so it still reports when
+# the server itself goes quiet. This repository is public, so these runs cost no
+# Actions minutes; the list of sites is kept in a secret so the repository does
+# not advertise them.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: monitor
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check each site
+        id: check
+        env:
+          TARGETS: ${{ secrets.MONITOR_TARGETS }}
+        run: |
+          fails=""
+          count=0
+          while IFS='|' read -r name url expect; do
+            [ -z "${url:-}" ] && continue
+            count=$((count + 1))
+
+            # Two attempts, thirty seconds apart, so one blip is not an alert.
+            ok=0
+            for attempt in 1 2; do
+              body=$(curl -sS --max-time 20 -w '\n%{http_code}' "$url" 2>/dev/null || printf '\n000')
+              code=$(printf '%s' "$body" | tail -n1)
+              ok=1
+              [ "$code" = "200" ] || ok=0
+              if [ -n "${expect:-}" ] && ! printf '%s' "$body" | grep -q "$expect"; then ok=0; fi
+              [ "$ok" = "1" ] && break
+              [ "$attempt" = "1" ] && sleep 30
+            done
+
+            if [ "$ok" = "1" ]; then
+              echo "OK   $name ($code)"
+            else
+              echo "FAIL $name ($code)"
+              reason="$code"
+              [ "$code" = "200" ] && reason="200 but wrong content"
+              fails="${fails}$(printf '\n- %s: %s' "$name" "$reason")"
+            fi
+          done <<< "$TARGETS"
+
+          echo "checked $count target(s)"
+          if [ -n "$fails" ]; then
+            { echo "fails<<ALERT_EOF"; printf '%s\n' "$fails"; echo "ALERT_EOF"; } >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Alert
+        if: failure()
+        env:
+          FAILS: ${{ steps.check.outputs.fails }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          detail="${FAILS:-$(printf '\n- see the run for details')}"
+          text=$(printf 'Site check failed:%s\n\n%s' "$detail" "$RUN_URL")
+          curl -s --max-time 20 -o /dev/null \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=$text"
