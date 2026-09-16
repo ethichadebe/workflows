@@ -1,0 +1,4 @@
+# Server scripts must keep Unix line endings or bash refuses to run them.
+server/* text eol=lf
+*.sh text eol=lf
+*.md text
