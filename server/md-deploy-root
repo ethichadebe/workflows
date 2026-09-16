@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# Mobile Delivery: the privileged half of the deploy dispatcher.
+#
+# Only ever reached through md-deploy, which has already checked that the
+# action is known and the app name is plain lowercase. Everything here works on
+# a Candidate: a new version that is checked while users are still being served
+# the Live version, and only becomes Live once it answers correctly.
+set -euo pipefail
+
+action="${1:-}"
+app="${2:-}"
+
+# ── App registry ──────────────────────────────────────────────────────────────
+# One block per app. Adding an app here is what makes it deployable at all.
+case "$app" in
+  askus)
+    FRONT_DIR=/opt/askus-frontend/frontend          # holds dist, dist.prev, dist.new
+    SITE_HOST=askusapp.ethichadebe.me
+    CANDIDATE_PORT=8090                              # local-only nginx vhost serving dist.new
+    API_DIR=/opt/askus/backend/api                   # holds app.jar and the compose project
+    API_HEALTH_PATH=/api/provinces
+    API_LIVE_PORT=8080
+    API_CANDIDATE_PORT=18080
+    API_NETWORK=api_default
+    API_SERVICE=api
+    ;;
+  *)
+    echo "refused: unknown app '${app}'" >&2
+    exit 2
+    ;;
+esac
+
+log() { echo "[md-deploy] $*"; }
+
+http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$@" || true; }
+
+# ── Actions ───────────────────────────────────────────────────────────────────
+case "$action" in
+
+  status)
+    log "app=$app"
+    log "frontend live: $(http_code --resolve "${SITE_HOST}:443:127.0.0.1" -k "https://${SITE_HOST}/")"
+    log "api live:      $(http_code "http://127.0.0.1:${API_LIVE_PORT}${API_HEALTH_PATH}")"
+    ls -la "$FRONT_DIR" | grep -E 'dist' || true
+    ;;
+
+  # Receives site.tar.gz on stdin. Nothing is served from it yet.
+  frontend-upload)
+    umask 022
+    cat > "${FRONT_DIR}/candidate.tar.gz"
+    log "received $(stat -c %s "${FRONT_DIR}/candidate.tar.gz") bytes"
+    ;;
+
+  frontend-cutover)
+    cd "$FRONT_DIR"
+    [ -f candidate.tar.gz ] || { echo "no candidate uploaded" >&2; exit 1; }
+
+    rm -rf dist.new
+    mkdir dist.new
+    tar -xzf candidate.tar.gz -C dist.new
+    rm -f candidate.tar.gz
+    [ -f dist.new/index.html ] || { echo "candidate has no index.html" >&2; rm -rf dist.new; exit 1; }
+
+    # Check the Candidate through nginx before any user can reach it. The
+    # candidate vhost listens on localhost only and serves dist.new.
+    page_code=$(http_code "http://127.0.0.1:${CANDIDATE_PORT}/")
+    asset=$(grep -o '/assets/[^"]*\.js' dist.new/index.html | head -1 || true)
+    asset_code=$(http_code "http://127.0.0.1:${CANDIDATE_PORT}${asset}")
+    if [ "$page_code" != "200" ] || [ -z "$asset" ] || [ "$asset_code" != "200" ]; then
+      echo "candidate failed its check (page=$page_code asset=$asset_code path=$asset)" >&2
+      rm -rf dist.new
+      echo "live version untouched" >&2
+      exit 1
+    fi
+    log "candidate passed (page=$page_code asset=$asset)"
+
+    # Cutover: two renames, so visitors never see a missing folder.
+    rm -rf dist.prev
+    [ -d dist ] && mv dist dist.prev
+    mv dist.new dist
+
+    live_code=$(http_code --resolve "${SITE_HOST}:443:127.0.0.1" -k "https://${SITE_HOST}/")
+    if [ "$live_code" != "200" ]; then
+      echo "live check failed after cutover ($live_code) - rolling back" >&2
+      rm -rf dist
+      mv dist.prev dist
+      exit 1
+    fi
+    log "cutover done, live=$live_code"
+    ;;
+
+  # Receives app.jar on stdin. The running API is not touched.
+  backend-upload)
+    umask 022
+    cat > "${API_DIR}/app.jar.new"
+    log "received $(stat -c %s "${API_DIR}/app.jar.new") bytes"
+    ;;
+
+  backend-cutover)
+    cd "$API_DIR"
+    [ -f app.jar.new ] || { echo "no candidate uploaded" >&2; exit 1; }
+
+    # Build an image from the uploaded jar and run it beside the Live version,
+    # on a local-only port, so it can be checked before any traffic moves.
+    cp app.jar.new app.jar.candidate
+    tag="md-candidate-${app}:$(date -u +%Y%m%d%H%M%S)"
+    tmpdir=$(mktemp -d)
+    cp Dockerfile.runtime "$tmpdir/Dockerfile"
+    cp app.jar.candidate "$tmpdir/app.jar"
+    docker build -q -t "$tag" "$tmpdir" >/dev/null
+    rm -rf "$tmpdir" app.jar.candidate
+
+    cname="md-candidate-${app}"
+    docker rm -f "$cname" >/dev/null 2>&1 || true
+    docker run -d --name "$cname" --network "$API_NETWORK" --env-file .env \
+      -p "127.0.0.1:${API_CANDIDATE_PORT}:8080" "$tag" >/dev/null
+
+    ok=0
+    for _ in $(seq 1 30); do
+      if [ "$(http_code "http://127.0.0.1:${API_CANDIDATE_PORT}${API_HEALTH_PATH}")" = "200" ]; then ok=1; break; fi
+      sleep 5
+    done
+
+    if [ "$ok" != "1" ]; then
+      echo "candidate API never answered - discarding it" >&2
+      docker logs --tail 30 "$cname" 2>&1 | tail -30 >&2 || true
+      docker rm -f "$cname" >/dev/null 2>&1 || true
+      docker image rm -f "$tag" >/dev/null 2>&1 || true
+      rm -f app.jar.new
+      echo "live version untouched" >&2
+      exit 1
+    fi
+    log "candidate API healthy on ${API_CANDIDATE_PORT}"
+
+    # The Candidate is proven, so the same jar becomes Live.
+    docker rm -f "$cname" >/dev/null 2>&1 || true
+    docker image rm -f "$tag" >/dev/null 2>&1 || true
+    [ -f app.jar ] && cp app.jar app.jar.prev
+    mv app.jar.new app.jar
+    docker compose up -d --build "$API_SERVICE" >/dev/null
+
+    ok=0
+    for _ in $(seq 1 30); do
+      if [ "$(http_code "http://127.0.0.1:${API_LIVE_PORT}${API_HEALTH_PATH}")" = "200" ]; then ok=1; break; fi
+      sleep 5
+    done
+    if [ "$ok" != "1" ]; then
+      echo "live API did not come back - restoring previous jar" >&2
+      if [ -f app.jar.prev ]; then
+        mv app.jar.prev app.jar
+        docker compose up -d --build "$API_SERVICE" >/dev/null
+      fi
+      exit 1
+    fi
+    log "cutover done, api live"
+    ;;
+
+  *)
+    echo "refused: unknown action" >&2
+    exit 2
+    ;;
+esac

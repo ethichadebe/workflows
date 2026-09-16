@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Mobile Delivery: the only command the deploy key may run.
+#
+# The deploy key is pinned to this script in the deploy user's authorized_keys
+# (command="/usr/local/bin/md-deploy"), so whatever a caller asks for over SSH
+# arrives here in SSH_ORIGINAL_COMMAND instead of being run. Anything that is
+# not one of the actions below, for an app spelled in plain lowercase, is
+# refused. A leaked deploy key can therefore only redeploy known apps.
+#
+# The real work runs as root in md-deploy-root, reached through one sudo rule.
+set -euo pipefail
+
+cmd="${SSH_ORIGINAL_COMMAND:-}"
+action="${cmd%% *}"
+app="${cmd#* }"
+[ "$app" = "$cmd" ] && app=""
+
+case "$action" in
+  frontend-upload|frontend-cutover|backend-upload|backend-cutover|status) ;;
+  *)
+    echo "refused: unknown action '${action}'" >&2
+    echo "allowed: frontend-upload|frontend-cutover|backend-upload|backend-cutover|status <app>" >&2
+    exit 2
+    ;;
+esac
+
+# Plain lowercase names only: no paths, no spaces, no shell characters.
+case "$app" in
+  "" | *[!a-z0-9-]* )
+    echo "refused: bad app name" >&2
+    exit 2
+    ;;
+esac
+
+exec sudo -n /usr/local/sbin/md-deploy-root "$action" "$app"
