@@ -40,8 +40,10 @@ case "$app" in
     LIVE_NETWORK=accucery_default
     BACKEND_PORT=3000
     BACKEND_HEALTH_PATHS="/health /lists"            # nginx strips the /api prefix
+    # Candidate ports are published on the host, so they have to be free across
+    # every app here, not just this one: askus already checks its API on 18080.
     CANDIDATE_BACKEND_PORT=13000
-    CANDIDATE_FRONTEND_PORT=18080
+    CANDIDATE_FRONTEND_PORT=18081
     MIGRATION_STYLE=prisma
     ;;
   *)
