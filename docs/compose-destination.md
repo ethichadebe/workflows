@@ -22,6 +22,12 @@ The database container is never recreated, restarted or upgraded by a deploy.
 
 ## Adding an app
 
+The work is split across two repositories on purpose: this one never changes
+another repo's code. Steps 1 and 2 happen here. Steps 3 to 5 are for a session
+working on the app's own repository, which can be pointed at this page.
+
+### In this repository
+
 **1. Add a block to `server/md-deploy-root`.** This is the only thing that
 makes an app deployable at all, and it is deliberately manual — the list is the
 reason a leaked key from one repo cannot touch anything else on the machine.
@@ -41,12 +47,17 @@ reason a leaked key from one repo cannot touch anything else on the machine.
     ;;
 ```
 
-**2. Make the app's compose file take images rather than build them.** Replace
+**2. Add the app to the `ONBOARDED_REPOS` secret** so the audit watches it
+(`docs/audit.md`).
+
+### In the app's repository
+
+**3. Make the app's compose file take images rather than build them.** Replace
 each `build:` block with `image: ${BACKEND_IMAGE}` / `image: ${FRONTEND_IMAGE}`.
 The dispatcher sets those two values in the app's `.env` at Cutover, and keeps
 the previous ones so it can put them back.
 
-**3. Add the deploy workflow to the repo.**
+**4. Add the deploy workflow to the repo.**
 
 ```yaml
 name: Deploy
@@ -71,10 +82,15 @@ jobs:
 The repo needs `VPS_DEPLOY_KEY`, `VPS_HOST`, `TELEGRAM_BOT_TOKEN` and
 `TELEGRAM_CHAT_ID`.
 
-**4. Let the server read the images.** Packages pushed to ghcr start private.
+**5. Let the server read the images.** Packages pushed to ghcr start private.
 For a public repo, make both packages public under the repository's Packages
 settings. For a private one, `docker login ghcr.io` on the box once with a
 read-only token.
+
+**Order matters.** Do steps 1 and 2 first and install the dispatcher, then the
+app's own change. Leave any existing deploy in place until the new path has
+succeeded once — removing the old one first leaves the app with no way to ship
+if something needs a second attempt.
 
 ## Installing an updated dispatcher
 
