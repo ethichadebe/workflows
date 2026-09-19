@@ -129,7 +129,14 @@ case "$action" in
     else
       log "frontend live: $(http_code --resolve "${SITE_HOST}:443:127.0.0.1" -k "https://${SITE_HOST}/")"
       log "api live:      $(http_code "http://127.0.0.1:${API_LIVE_PORT}${API_HEALTH_PATH}")"
-      ls -la "$FRONT_DIR" | grep -E 'dist' || true
+      # Which of the three folders exist, and when each was last written.
+      # dist is live, dist.prev is what a rollback would restore, and a
+      # lingering dist.new means a cutover stopped part way.
+      for d in "$FRONT_DIR"/dist "$FRONT_DIR"/dist.prev "$FRONT_DIR"/dist.new; do
+        if [ -d "$d" ]; then
+          log "  ${d##*/}: $(date -u -r "$d" '+%Y-%m-%dT%H:%M:%SZ')"
+        fi
+      done
     fi
     ;;
 
