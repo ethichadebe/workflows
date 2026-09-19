@@ -1,0 +1,133 @@
+name: Compose deploy
+
+# Shared deploy for a Target made of several containers. Called by an Onboarded
+# repo like this:
+#
+#   jobs:
+#     deploy:
+#       uses: ethichadebe/workflows/.github/workflows/compose-deploy.yml@main
+#       permissions:
+#         contents: read
+#         packages: write
+#       with:
+#         app: accucery
+#         backend-dockerfile: backend/Dockerfile
+#         frontend-dockerfile: frontend/Dockerfile
+#       secrets: inherit
+#
+# CI builds the images and pushes them to GitHub's registry. The server pulls
+# them by digest, checks them beside the running version, and only then cuts
+# over. Nothing is built on the server, and the database is never touched.
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: The app name in the server's registry (server/md-deploy-root)
+        required: true
+        type: string
+      backend-dockerfile:
+        required: true
+        type: string
+      frontend-dockerfile:
+        required: true
+        type: string
+      build-context:
+        required: false
+        type: string
+        default: "."
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # ghcr rejects capitals, and repository names can have them.
+      - name: Work out the image names
+        id: names
+        run: echo "prefix=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Layer caching is what makes this affordable: a code-only change ships
+      # megabytes, even when the image carries a browser.
+      - name: Build and push the backend
+        id: backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.build-context }}
+          file: ${{ inputs.backend-dockerfile }}
+          push: true
+          tags: ${{ steps.names.outputs.prefix }}/backend:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build and push the frontend
+        id: frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.build-context }}
+          file: ${{ inputs.frontend-dockerfile }}
+          push: true
+          tags: ${{ steps.names.outputs.prefix }}/frontend:${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Set up the deploy key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_DEPLOY_KEY }}" > ~/.ssh/md_deploy
+          chmod 600 ~/.ssh/md_deploy
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      # Digests, not tags: a tag can be repointed to different content between
+      # the check and the cutover. The dispatcher refuses anything else.
+      - name: Tell the server which images to check
+        env:
+          PREFIX: ${{ steps.names.outputs.prefix }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+        run: |
+          printf 'BACKEND_IMAGE=%s/backend@%s\nFRONTEND_IMAGE=%s/frontend@%s\n' \
+            "$PREFIX" "$BACKEND_DIGEST" "$PREFIX" "$FRONTEND_DIGEST" > manifest
+          cat manifest
+          ssh -i ~/.ssh/md_deploy -o BatchMode=yes \
+            deploy@${{ secrets.VPS_HOST }} "compose-upload ${{ inputs.app }}" < manifest
+
+      # Pulls both images, refuses any migration that could break the running
+      # version, starts the candidate on local-only ports, checks it, and only
+      # then cuts over. A failed candidate is discarded and never serves users.
+      - name: Check the candidate and cut over
+        run: ssh -i ~/.ssh/md_deploy -o BatchMode=yes deploy@${{ secrets.VPS_HOST }} "compose-cutover ${{ inputs.app }}"
+
+      - name: Say it worked
+        if: success()
+        env:
+          MSG: ${{ github.event.head_commit.message || github.sha }}
+        run: |
+          curl -s --max-time 20 -o /dev/null \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=OK ${{ inputs.app }} is live: $MSG"
+
+      # A failed deploy means the candidate was discarded, so the live version
+      # is still serving. The message says so, to avoid a panic.
+      - name: Say it failed
+        if: failure()
+        env:
+          MSG: ${{ github.event.head_commit.message || github.sha }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -s --max-time 20 -o /dev/null \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=FAILED: ${{ inputs.app }} deploy. Your live version is untouched. $MSG -- $URL"

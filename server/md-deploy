@@ -16,10 +16,13 @@ app="${cmd#* }"
 [ "$app" = "$cmd" ] && app=""
 
 case "$action" in
-  frontend-upload|frontend-cutover|backend-upload|backend-cutover|status) ;;
+  frontend-upload|frontend-cutover|backend-upload|backend-cutover) ;;
+  compose-upload|compose-cutover) ;;
+  status) ;;
   *)
     echo "refused: unknown action '${action}'" >&2
-    echo "allowed: frontend-upload|frontend-cutover|backend-upload|backend-cutover|status <app>" >&2
+    echo "allowed: frontend-upload|frontend-cutover|backend-upload|backend-cutover" >&2
+    echo "         compose-upload|compose-cutover|status <app>" >&2
     exit 2
     ;;
 esac
