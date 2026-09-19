@@ -13,6 +13,11 @@ REPOS="ethichadebe/example" AUDIT_TOKEN=github_pat_... bash scripts/audit-onboar
 
 It only reads. It exits 1 when it finds anything, and prints Markdown.
 
+One check behaves differently there: a Cloud session's proxy refuses every
+GitHub Actions API path, so the secret-name check is skipped when the script is
+run by hand and only reports from the scheduled run. Its absence from a session
+run is not a clean result.
+
 ## The access it needs
 
 The workflow's own `GITHUB_TOKEN` can only see this repository, so the audit
