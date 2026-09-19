@@ -1,0 +1,45 @@
+name: Audit onboarded repos
+
+# Every Onboarded repo was set up by a Cloud session that could only see that
+# one repo. Nothing has ever compared them, so the second repo solved deploys
+# its own way and the decisions in docs/adr/ quietly stopped being true
+# everywhere. This job is the only thing that looks at all of them at once, and
+# it needs a token that can read them all — see docs/audit.md.
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch: {}
+
+concurrency:
+  group: audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The report goes to the run summary whether or not anything was found,
+      # so a clean audit is visible rather than merely silent.
+      - name: Check every onboarded repo
+        id: audit
+        env:
+          AUDIT_TOKEN: ${{ secrets.AUDIT_TOKEN }}
+          REPOS: ${{ secrets.ONBOARDED_REPOS }}
+        run: |
+          set -o pipefail
+          bash scripts/audit-onboarded.sh | tee "$GITHUB_STEP_SUMMARY"
+
+      # Same bot as the site monitor: one place to look, not two. A finding is
+      # not an outage, so the message says what it is.
+      - name: Alert
+        if: failure()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          text=$(printf 'Onboarded repos have drifted from the delivery decisions. Nothing is down.\n\n%s' "$RUN_URL")
+          curl -s --max-time 20 -o /dev/null \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=$text"

@@ -104,11 +104,21 @@ Cloud sessions do not inherit plugins from anyone's laptop, so declare them in t
 }
 ```
 
+## 5. Ask to be put on the audit list
+
+Nothing else compares Onboarded repos to each other, so a repo that is not on the list drifts unnoticed. You cannot set the secret yourself, so end the pull request description with one line:
+
+> Add `owner/repo` to the `ONBOARDED_REPOS` secret in `ethichadebe/workflows` after merging.
+
+See `docs/audit.md` in that repository for what the audit then checks.
+
 ## What onboarding does **not** do
 
 **It does not set up deploys.** A repo needs a Destination — somewhere to ship to — and each kind of Destination has to exist on the server first. Onboarding gives the repo its checks, its conventions and its journal. Deploys are added afterwards, by someone with server access.
 
 Say this plainly in the pull request description, so nobody merges it expecting the repo to start deploying.
+
+**Do not invent a deploy to fill the gap.** A timer on the server that pulls and rebuilds looks like it solves this, and does not: it makes a new version Live before anything has checked it, which ADR-0003 rules out, and it has to be installed and repaired by hand on the box — the exact thing this workflow exists to avoid. A deploy reaches the server through the locked dispatcher or it waits. Say in the pull request description which Destination this repo will need, so whoever adds the matching action to the dispatcher knows what to build.
 
 ## The pull request
 
@@ -116,7 +126,8 @@ Title it `chore: onboard to Mobile Delivery`. In the description, cover:
 
 - the Targets you found, and the commands you chose for each,
 - anything you deliberately left out, and why,
-- that deploys are **not** included yet,
+- that deploys are **not** included yet, and which Destination the repo will need,
+- the line asking for the repo to be added to `ONBOARDED_REPOS`,
 - anything about the repo that will make deploying awkward later, such as a build that needs secrets, or tests that need a database.
 
 That last point is the most valuable thing you can write. Whoever adds the Destination reads it first.
