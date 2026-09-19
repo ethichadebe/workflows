@@ -29,6 +29,9 @@ flags()   { if printf '%s\n' "$1" | destructive_sql >/dev/null; then ok; else ba
 allows()  { if printf '%s\n' "$1" | destructive_sql >/dev/null; then bad "should allow: $1"; else ok; fi; }
 
 echo "valid_image"
+# valid_image reads this from its caller's scope; it is loaded above rather
+# than defined here, so shellcheck cannot see the use.
+# shellcheck disable=SC2034
 REGISTRY_PREFIX=ghcr.io/ethichadebe/brittle-ai
 D=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 accepts "ghcr.io/ethichadebe/brittle-ai/backend@sha256:$D"
