@@ -1,0 +1,28 @@
+name: CI
+
+# This repository provides everyone else's checks and had none of its own, so a
+# broken dispatcher could reach the server before anyone noticed.
+on:
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse every script
+        run: |
+          for f in server/md-deploy server/md-deploy-root server/*.sh scripts/*.sh; do
+            [ -f "$f" ] || continue
+            bash -n "$f" && echo "ok  $f"
+          done
+
+      - uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: .
+          severity: warning
+
+      - name: Deploy dispatcher rules
+        run: bash server/md-deploy-root.test.sh

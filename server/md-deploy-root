@@ -14,6 +14,7 @@ app="${2:-}"
 # One block per app. Adding an app here is what makes it deployable at all.
 case "$app" in
   askus)
+    APP_KIND=static-jar
     FRONT_DIR=/opt/askus-frontend/frontend          # holds dist, dist.prev, dist.new
     SITE_HOST=askusapp.ethichadebe.me
     CANDIDATE_PORT=8090                              # local-only nginx vhost serving dist.new
@@ -24,9 +25,38 @@ case "$app" in
     API_NETWORK=api_default
     API_SERVICE=api
     ;;
+  accucery)
+    # A compose app: several containers, built on CI and pulled here by digest.
+    # The database is NOT one of them — it keeps running, untouched, across
+    # every deploy, which is the only reason this is safe to automate.
+    #
+    # These values must match the box. Confirm with:
+    #   docker compose -f /opt/accucery/docker-compose.prod.yml ps
+    #   docker network ls | grep accucery
+    APP_KIND=compose
+    APP_DIR=/opt/accucery
+    COMPOSE_FILE=docker-compose.prod.yml
+    REGISTRY_PREFIX=ghcr.io/ethichadebe/brittle-ai
+    LIVE_NETWORK=accucery_default
+    BACKEND_PORT=3000
+    BACKEND_HEALTH_PATHS="/health /lists"            # nginx strips the /api prefix
+    CANDIDATE_BACKEND_PORT=13000
+    CANDIDATE_FRONTEND_PORT=18080
+    MIGRATION_STYLE=prisma
+    ;;
   *)
     echo "refused: unknown app '${app}'" >&2
     exit 2
+    ;;
+esac
+
+# An action written for one shape of app must never run against another.
+case "$action" in
+  frontend-upload|frontend-cutover|backend-upload|backend-cutover)
+    [ "$APP_KIND" = "static-jar" ] || { echo "refused: '$action' is not for a $APP_KIND app" >&2; exit 2; }
+    ;;
+  compose-upload|compose-cutover)
+    [ "$APP_KIND" = "compose" ] || { echo "refused: '$action' is not for a $APP_KIND app" >&2; exit 2; }
     ;;
 esac
 
@@ -34,14 +64,73 @@ log() { echo "[md-deploy] $*"; }
 
 http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$@" || true; }
 
+# Read one value from a KEY=value file without sourcing it. These files hold
+# cookies full of semicolons and dollar signs, and sourcing one printed a
+# session token to someone's terminal once already.
+file_value() {
+  local file="$1" key="$2" line
+  [ -f "$file" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; *=*) ;; *) continue ;; esac
+    [ "${line%%=*}" = "$key" ] || continue
+    line=${line#*=}
+    case "$line" in \"*\") line=${line#\"}; line=${line%\"} ;; esac
+    printf '%s' "$line"
+    return 0
+  done < "$file"
+}
+
+# Replace one KEY=value line in place, leaving every other line untouched.
+set_file_value() {
+  local file="$1" key="$2" value="$3" tmp
+  tmp=$(mktemp)
+  [ -f "$file" ] && grep -v "^${key}=" "$file" > "$tmp"
+  printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  cat "$tmp" > "$file"
+  rm -f "$tmp"
+}
+
+# Statements that can break the version currently serving users, or leave a
+# rollback facing a schema it does not understand. Additive changes are absent
+# on purpose: CREATE TABLE, ADD COLUMN and CREATE INDEX are all invisible to
+# code that does not know about them.
+destructive_sql() {
+  grep -inE 'DROP[[:space:]]+TABLE|DROP[[:space:]]+COLUMN|DROP[[:space:]]+CONSTRAINT|DROP[[:space:]]+SCHEMA|DROP[[:space:]]+DATABASE|RENAME|TRUNCATE|DELETE[[:space:]]+FROM|SET[[:space:]]+NOT[[:space:]]+NULL|ALTER[[:space:]]+COLUMN[^;]*TYPE'
+}
+
+# An image this dispatcher will pull: pinned to a digest, in this app's own
+# namespace. A tag can be repointed to different content after it has been
+# checked; a digest cannot.
+valid_image() {
+  local ref="$1" digest
+  case "$ref" in
+    "${REGISTRY_PREFIX}"@sha256:*|"${REGISTRY_PREFIX}"/*@sha256:*) ;;
+    *) return 1 ;;
+  esac
+  case "$ref" in *[!a-zA-Z0-9./:@_-]*) return 1 ;; esac
+  digest=${ref##*@sha256:}
+  [ ${#digest} -eq 64 ] || return 1
+  case "$digest" in *[!0-9a-f]*) return 1 ;; esac
+  return 0
+}
+
 # ── Actions ───────────────────────────────────────────────────────────────────
 case "$action" in
 
   status)
-    log "app=$app"
-    log "frontend live: $(http_code --resolve "${SITE_HOST}:443:127.0.0.1" -k "https://${SITE_HOST}/")"
-    log "api live:      $(http_code "http://127.0.0.1:${API_LIVE_PORT}${API_HEALTH_PATH}")"
-    ls -la "$FRONT_DIR" | grep -E 'dist' || true
+    log "app=$app kind=$APP_KIND"
+    if [ "$APP_KIND" = "compose" ]; then
+      port=$(file_value "${APP_DIR}/.env" FRONTEND_PORT); port=${port##*:}; port=${port:-80}
+      log "site live:     $(http_code "http://127.0.0.1:${port}/")"
+      log "api live:      $(http_code "http://127.0.0.1:${port}/api/health")"
+      log "backend image: $(file_value "${APP_DIR}/.env" BACKEND_IMAGE)"
+      log "frontend image: $(file_value "${APP_DIR}/.env" FRONTEND_IMAGE)"
+      docker compose -f "${APP_DIR}/${COMPOSE_FILE}" --project-directory "$APP_DIR" ps 2>/dev/null || true
+    else
+      log "frontend live: $(http_code --resolve "${SITE_HOST}:443:127.0.0.1" -k "https://${SITE_HOST}/")"
+      log "api live:      $(http_code "http://127.0.0.1:${API_LIVE_PORT}${API_HEALTH_PATH}")"
+      ls -la "$FRONT_DIR" | grep -E 'dist' || true
+    fi
     ;;
 
   # Receives site.tar.gz on stdin. Nothing is served from it yet.
@@ -153,6 +242,165 @@ case "$action" in
       exit 1
     fi
     log "cutover done, api live"
+    ;;
+
+  # Receives a short manifest naming the images CI has just pushed. Nothing is
+  # pulled, started or changed here; the running app is untouched.
+  compose-upload)
+    umask 022
+    head -c 4096 > "${APP_DIR}/candidate.images"
+    log "received manifest ($(grep -c . "${APP_DIR}/candidate.images" || true) line(s))"
+    ;;
+
+  compose-cutover)
+    cd "$APP_DIR"
+    [ -f candidate.images ] || { echo "no candidate uploaded" >&2; exit 1; }
+
+    backend_image=$(file_value candidate.images BACKEND_IMAGE)
+    frontend_image=$(file_value candidate.images FRONTEND_IMAGE)
+    rm -f candidate.images
+
+    for ref in "$backend_image" "$frontend_image"; do
+      valid_image "$ref" || {
+        echo "refused: '${ref}' is not a digest-pinned image under ${REGISTRY_PREFIX}" >&2
+        exit 2
+      }
+    done
+
+    cname_b="md-candidate-${app}-backend"
+    cname_f="md-candidate-${app}-frontend"
+    discard() { docker rm -f "$cname_b" "$cname_f" >/dev/null 2>&1 || true; }
+    trap discard EXIT
+
+    docker pull -q "$backend_image" >/dev/null
+    docker pull -q "$frontend_image" >/dev/null
+    log "pulled both candidate images"
+
+    # ── The migration gate ────────────────────────────────────────────────
+    # The candidate shares the live database, so its migrations reach live
+    # data before any cutover. Additive changes are safe for the version
+    # currently serving users, and keep a rollback safe too. A drop, rename or
+    # new NOT NULL is not, and deserves a person rather than an automatic
+    # gamble. Anything this cannot read for certain is refused, not assumed.
+    if [ "${MIGRATION_STYLE:-none}" = "prisma" ]; then
+      # `migrate status` reads the migrations table. It never applies anything,
+      # and the image's own entrypoint (which does) is bypassed here.
+      in_candidate() {
+        docker run --rm --network "$LIVE_NETWORK" --env-file "${APP_DIR}/.env" \
+          --entrypoint sh "$backend_image" -c "$1" 2>&1
+      }
+
+      state=$(in_candidate './node_modules/.bin/prisma migrate status' || true)
+      if printf '%s' "$state" | grep -q 'up to date'; then
+        pending=""
+      elif printf '%s' "$state" | grep -q 'not yet been applied'; then
+        pending=$(printf '%s\n' "$state" | grep -oE '[0-9]{6,}_[A-Za-z0-9_]+' || true)
+        [ -n "$pending" ] || {
+          echo "refused: migrations are pending but their names could not be read" >&2
+          printf '%s\n' "$state" | tail -20 >&2
+          echo "live version untouched" >&2
+          exit 1
+        }
+      else
+        echo "refused: could not determine the migration state" >&2
+        printf '%s\n' "$state" | tail -20 >&2
+        echo "live version untouched" >&2
+        exit 1
+      fi
+
+      for m in $pending; do
+        case "$m" in *[!A-Za-z0-9_]*)
+          echo "refused: migration name '${m}' is not a plain name" >&2; exit 2 ;;
+        esac
+        sql=$(in_candidate "cat prisma/migrations/${m}/migration.sql" || true)
+        [ -n "$sql" ] || { echo "refused: cannot read migration ${m}" >&2; exit 1; }
+        hit=$(printf '%s\n' "$sql" | destructive_sql | head -3 || true)
+        if [ -n "$hit" ]; then
+          echo "REFUSED: migration ${m} changes existing data or columns." >&2
+          printf '%s\n' "$hit" | sed 's/^/    /' >&2
+          echo >&2
+          echo "Nothing was applied and the live version is untouched. Apply this" >&2
+          echo "one deliberately, then deploy again." >&2
+          exit 1
+        fi
+        log "migration ${m} is additive"
+      done
+      [ -n "$pending" ] && log "$(printf '%s\n' "$pending" | grep -c .) migration(s) will be applied" || log "no pending migrations"
+    fi
+
+    # ── Check the candidate, beside the live version ──────────────────────
+    # Both candidates join the live network so the backend reaches the running
+    # database and the frontend's nginx can resolve its upstream. They publish
+    # on localhost-only ports, so no user can reach them.
+    docker rm -f "$cname_b" "$cname_f" >/dev/null 2>&1 || true
+    docker run -d --name "$cname_b" --network "$LIVE_NETWORK" --env-file .env \
+      -p "127.0.0.1:${CANDIDATE_BACKEND_PORT}:${BACKEND_PORT}" "$backend_image" >/dev/null
+
+    ok=0
+    for _ in $(seq 1 30); do
+      ok=1
+      for path in $BACKEND_HEALTH_PATHS; do
+        [ "$(http_code "http://127.0.0.1:${CANDIDATE_BACKEND_PORT}${path}")" = "200" ] || ok=0
+      done
+      [ "$ok" = "1" ] && break
+      sleep 5
+    done
+    if [ "$ok" != "1" ]; then
+      echo "candidate backend never answered - discarding it" >&2
+      docker logs --tail 30 "$cname_b" 2>&1 | tail -30 >&2 || true
+      echo "live version untouched" >&2
+      exit 1
+    fi
+    log "candidate backend healthy"
+
+    docker run -d --name "$cname_f" --network "$LIVE_NETWORK" \
+      -p "127.0.0.1:${CANDIDATE_FRONTEND_PORT}:80" "$frontend_image" >/dev/null
+    ok=0
+    for _ in $(seq 1 12); do
+      [ "$(http_code "http://127.0.0.1:${CANDIDATE_FRONTEND_PORT}/")" = "200" ] && { ok=1; break; }
+      sleep 5
+    done
+    if [ "$ok" != "1" ]; then
+      echo "candidate site never answered - discarding it" >&2
+      docker logs --tail 30 "$cname_f" 2>&1 | tail -30 >&2 || true
+      echo "live version untouched" >&2
+      exit 1
+    fi
+    log "candidate site healthy"
+
+    # ── Cutover ───────────────────────────────────────────────────────────
+    discard
+    trap - EXIT
+
+    prev_backend=$(file_value .env BACKEND_IMAGE)
+    prev_frontend=$(file_value .env FRONTEND_IMAGE)
+    set_file_value .env BACKEND_IMAGE "$backend_image"
+    set_file_value .env FRONTEND_IMAGE "$frontend_image"
+
+    compose=(docker compose -f "$COMPOSE_FILE" --project-directory "$APP_DIR")
+    "${compose[@]}" up -d >/dev/null 2>&1 || true
+
+    port=$(file_value .env FRONTEND_PORT); port=${port##*:}; port=${port:-80}
+    ok=0
+    for _ in $(seq 1 30); do
+      if [ "$(http_code "http://127.0.0.1:${port}/")" = "200" ] &&
+         [ "$(http_code "http://127.0.0.1:${port}/api/health")" = "200" ]; then ok=1; break; fi
+      sleep 5
+    done
+
+    if [ "$ok" != "1" ]; then
+      echo "live check failed after cutover - restoring the previous images" >&2
+      if [ -n "$prev_backend" ] && [ -n "$prev_frontend" ]; then
+        set_file_value .env BACKEND_IMAGE "$prev_backend"
+        set_file_value .env FRONTEND_IMAGE "$prev_frontend"
+        "${compose[@]}" up -d >/dev/null 2>&1 || true
+        echo "previous version restored - every applied migration was additive, so it fits the schema" >&2
+      else
+        echo "no previous images recorded, so there is nothing to restore" >&2
+      fi
+      exit 1
+    fi
+    log "cutover done, site live"
     ;;
 
   *)

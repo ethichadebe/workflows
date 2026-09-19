@@ -118,7 +118,7 @@ See `docs/audit.md` in that repository for what the audit then checks.
 
 Say this plainly in the pull request description, so nobody merges it expecting the repo to start deploying.
 
-**Do not invent a deploy to fill the gap.** A timer on the server that pulls and rebuilds looks like it solves this, and does not: it makes a new version Live before anything has checked it, which ADR-0003 rules out, and it has to be installed and repaired by hand on the box — the exact thing this workflow exists to avoid. A deploy reaches the server through the locked dispatcher or it waits. Say in the pull request description which Destination this repo will need, so whoever adds the matching action to the dispatcher knows what to build.
+**Do not invent a deploy to fill the gap.** A timer on the server that pulls and rebuilds looks like it solves this, and does not: it makes a new version Live before anything has checked it, which ADR-0003 rules out, and it has to be installed and repaired by hand on the box — the exact thing this workflow exists to avoid. A deploy reaches the server through the locked dispatcher or it waits. Two shapes are supported today: a static site plus a jar, and a set of containers built on CI (`docs/compose-destination.md` in the workflows repository). Say in the pull request description which Destination this repo will need, so whoever adds the matching action to the dispatcher knows what to build.
 
 ## The pull request
 

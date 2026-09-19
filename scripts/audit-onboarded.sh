@@ -135,10 +135,13 @@ for repo in $repos; do
       copied="${copied} ${wf##*/}"
     fi
 
-    # A deploy is anything that speaks to the dispatcher.
-    if grep -qE '(frontend|backend)-(upload|cutover)' "$BODY"; then
+    # A deploy is anything that reaches the dispatcher: directly, or through
+    # the shared compose deploy.
+    if grep -qE '(frontend|backend)-(upload|cutover)|compose-(upload|cutover)' "$BODY" ||
+       grep -q 'workflows/compose-deploy.yml@' "$BODY"; then
       deploys="${deploys} ${wf##*/}"
-      app=$(grep -oE '^[[:space:]]*APP:[[:space:]]*[a-z0-9-]+' "$BODY" | head -1 | awk '{print $2}')
+      # `APP:` in a hand-rolled deploy, `app:` in a call to the shared one.
+      app=$(grep -oE '^[[:space:]]*[Aa][Pp][Pp]:[[:space:]]*[a-z0-9-]+' "$BODY" | head -1 | awk '{print $2}')
       [ -n "$app" ] && apps="$apps $app"
     fi
   done
