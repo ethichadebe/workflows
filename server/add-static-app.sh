@@ -118,8 +118,14 @@ systemctl reload nginx
 echo "  nginx reloaded"
 
 say "RESULT"
-echo "  Check it, without deploying anything:"
-echo "    ssh -i ~/.ssh/md_deploy deploy@localhost 'status ${app}'"
+# Not an ssh command: the private deploy key lives in the repo's secrets and on
+# a laptop, never on this server, so `ssh -i ~/.ssh/md_deploy` here fails on a
+# key that is not there.
+echo "  Check it from this server, without deploying anything:"
+echo "    /usr/local/sbin/md-deploy-root status ${app}"
+echo
+echo "  Or exercise the same locked path a real deploy takes, sudo rule included:"
+echo "    sudo -u deploy SSH_ORIGINAL_COMMAND='status ${app}' /usr/local/bin/md-deploy"
 echo
 echo "  Two 404s is the correct answer before the first deploy: nginx is"
 echo "  answering, but ${dir}/dist and dist.new do not exist yet. A 000 means"

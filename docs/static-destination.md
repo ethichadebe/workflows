@@ -69,10 +69,21 @@ This stays a person running a script rather than something the dispatcher does
 > sharing that vhost would have its Candidate "checked" against askus's folder
 > and pass without ever being looked at.
 
-Then confirm, without deploying anything:
+Then confirm, without deploying anything.
+
+From a laptop holding the private deploy key:
 
 ```bash
 ssh -i ~/.ssh/md_deploy deploy@SERVER 'status yourapp'
+```
+
+From the server itself, where that key does not exist and never should:
+
+```bash
+/usr/local/sbin/md-deploy-root status yourapp
+
+# or, to exercise the locked path a real deploy takes, sudo rule included:
+sudo -u deploy SSH_ORIGINAL_COMMAND='status yourapp' /usr/local/bin/md-deploy
 ```
 
 The candidate vhost line reads `404` or `000` when idle — that is correct, since
