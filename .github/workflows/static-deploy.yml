@@ -1,0 +1,134 @@
+name: Static deploy
+
+# Shared deploy for a Target that is a folder of files. Called by an Onboarded
+# repo like this:
+#
+#   jobs:
+#     deploy:
+#       uses: ethichadebe/workflows/.github/workflows/static-deploy.yml@main
+#       with:
+#         app: portfolio
+#         dist: public
+#       secrets: inherit
+#
+# A site with a build step passes `install` and `build` as well, and points
+# `dist` at the built folder. One without them — plain HTML, or a repo that
+# commits its output — passes neither, and no toolchain is set up at all.
+#
+# CI packages the folder and hands it to the dispatcher. The server unpacks it
+# beside the live site, serves it on a local-only port, fetches the page and
+# the first script it references, and only swaps the folders if both answer.
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: The app name in the server's registry (server/md-deploy-root)
+        required: true
+        type: string
+      dist:
+        description: Folder to ship, relative to working-directory. Must hold index.html.
+        required: true
+        type: string
+      working-directory:
+        required: false
+        type: string
+        default: "."
+      install:
+        required: false
+        type: string
+        default: ""
+      build:
+        required: false
+        type: string
+        default: ""
+      node-version:
+        required: false
+        type: string
+        default: "22"
+      expect:
+        description: >
+          Optional string that must appear somewhere in the built output. Use it
+          for a value the site is useless without — an API address, say — so a
+          build that silently dropped it fails here rather than in a browser.
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Skipped entirely for a site with nothing to build, so a repo without a
+      # package.json does not need one.
+      - uses: actions/setup-node@v4
+        if: inputs.install != '' || inputs.build != ''
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install
+        if: inputs.install != ''
+        run: ${{ inputs.install }}
+
+      - name: Build
+        if: inputs.build != ''
+        run: ${{ inputs.build }}
+
+      - name: Check the output and package it
+        env:
+          DIST: ${{ inputs.dist }}
+          EXPECT: ${{ inputs.expect }}
+        run: |
+          set -euo pipefail
+          if [ ! -f "$DIST/index.html" ]; then
+            echo "::error::$DIST has no index.html, so there is nothing to serve."
+            exit 1
+          fi
+          if [ -n "$EXPECT" ] && ! grep -rqF "$EXPECT" "$DIST"; then
+            echo "::error::'$EXPECT' is missing from the built site, so it would be live and broken."
+            exit 1
+          fi
+          tar -czf site.tar.gz -C "$DIST" .
+          ls -la site.tar.gz
+
+      # The key is locked on the server to one dispatcher, so these two lines
+      # are the only things it can do. It cannot open a shell.
+      - name: Set up the deploy key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_DEPLOY_KEY }}" > ~/.ssh/md_deploy
+          chmod 600 ~/.ssh/md_deploy
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Upload the candidate
+        run: ssh -i ~/.ssh/md_deploy -o BatchMode=yes deploy@${{ secrets.VPS_HOST }} "frontend-upload ${{ inputs.app }}" < site.tar.gz
+
+      - name: Check the candidate and cut over
+        run: ssh -i ~/.ssh/md_deploy -o BatchMode=yes deploy@${{ secrets.VPS_HOST }} "frontend-cutover ${{ inputs.app }}"
+
+      - name: Say it worked
+        if: success()
+        env:
+          MSG: ${{ github.event.head_commit.message || github.sha }}
+        run: |
+          curl -s --max-time 20 -o /dev/null \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=OK ${{ inputs.app }} is live: $MSG"
+
+      # A failed deploy means the candidate was discarded, so the live version
+      # is still serving. The message says so, to avoid a panic.
+      - name: Say it failed
+        if: failure()
+        env:
+          MSG: ${{ github.event.head_commit.message || github.sha }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -s --max-time 20 -o /dev/null \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=FAILED: ${{ inputs.app }} deploy. Your live version is untouched. $MSG -- $URL"

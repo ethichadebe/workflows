@@ -138,7 +138,7 @@ for repo in $repos; do
     # A deploy is anything that reaches the dispatcher: directly, or through
     # the shared compose deploy.
     if grep -qE '(frontend|backend)-(upload|cutover)|compose-(upload|cutover)' "$BODY" ||
-       grep -q 'workflows/compose-deploy.yml@' "$BODY"; then
+       grep -qE 'workflows/(compose|static)-deploy\.yml@' "$BODY"; then
       deploys="${deploys} ${wf##*/}"
       # `APP:` in a hand-rolled deploy, `app:` in a call to the shared one.
       app=$(grep -oE '^[[:space:]]*[Aa][Pp][Pp]:[[:space:]]*[a-z0-9-]+' "$BODY" | head -1 | awk '{print $2}')
