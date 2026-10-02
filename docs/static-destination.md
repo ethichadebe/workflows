@@ -41,26 +41,27 @@ for a session on the app's own repository — this repo never edits another.
 host-wide, not per-app — askus already uses `8090` for its candidate vhost and
 `18080` for its candidate API.
 
-**2. Install that app's candidate vhost, as root:**
+**2. Prepare nginx, as root.** Fetch the script rather than typing the vhosts
+by hand — this box is already serving other sites, and a typo in an nginx file
+is an outage. It is safe to re-run and changes nothing already correct.
 
 ```bash
-cat > /etc/nginx/conf.d/md-candidate-yourapp.conf <<'NGINX'
-# Mobile Delivery: checks yourapp's Candidate before Cutover.
-# Reachable only from the server itself.
-server {
-    listen 127.0.0.1:8091;
-    server_name _;
-    root /opt/yourapp/dist.new;
-    index index.html;
-    location / { try_files $uri $uri/ /index.html; }
-}
-NGINX
-nginx -t && systemctl reload nginx
-install -d -o deploy -g deploy /opt/yourapp
+curl -fsSL -o /tmp/add-static-app.sh \
+  https://raw.githubusercontent.com/ethichadebe/workflows/main/server/add-static-app.sh
+bash /tmp/add-static-app.sh yourapp yourapp.example 8091 /opt/yourapp
 ```
 
-The port and the root must match the registry block. This is deliberately a
-person's job, not the dispatcher's — ADR-0007 says why.
+It creates the app's directory, the localhost-only candidate vhost on the port
+you gave it, the live vhost, and a self-signed certificate if none exists —
+then validates and reloads nginx. It refuses if the dispatcher has no block for
+the app, or if another vhost already holds that port.
+
+The certificate is self-signed on purpose: the deploy's own check uses
+`curl -k`, so the whole path can be proven while DNS still points elsewhere.
+Replace it with certbot once the domain resolves here.
+
+This stays a person running a script rather than something the dispatcher does
+— ADR-0007 says why.
 
 > **If you are adding the second static app**, the vhost already on the box is
 > `md-candidate.conf`, hardcoded to askus's folder. Leave it; it is askus's.
