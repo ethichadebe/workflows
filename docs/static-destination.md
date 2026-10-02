@@ -56,6 +56,14 @@ you gave it, the live vhost, and a self-signed certificate if none exists —
 then validates and reloads nginx. It refuses if the dispatcher has no block for
 the app, or if another vhost already holds that port.
 
+Both vhosts end in `try_files $uri $uri/ =404`, never a fallback to
+`/index.html`. On the candidate vhost that is load-bearing: the cutover check
+fetches the page **and the first script the page references**, and a fallback
+answers a missing script with `index.html` and a 200 — so a build that lost its
+assets passes the check and goes live broken. If the site becomes a single-page
+app with client-side routes, change the **live** vhost's `=404` to
+`/index.html`; leave the candidate vhost alone.
+
 The certificate is self-signed on purpose: the deploy's own check uses
 `curl -k`, so the whole path can be proven while DNS still points elsewhere.
 Replace it with certbot once the domain resolves here.
@@ -86,8 +94,9 @@ From the server itself, where that key does not exist and never should:
 sudo -u deploy SSH_ORIGINAL_COMMAND='status yourapp' /usr/local/bin/md-deploy
 ```
 
-The candidate vhost line reads `404` or `000` when idle — that is correct, since
-`dist.new` only exists mid-cutover.
+Both lines read `404` before the first deploy — nginx is answering, but `dist`
+and `dist.new` do not exist yet. A `000` means nginx is not listening where it
+should be, and is the one to investigate.
 
 ### In the app's repository
 

@@ -61,6 +61,11 @@ install -d -o deploy -g deploy -m 0755 "$dir"
 echo "  $dir"
 
 say "2. candidate vhost (localhost only, serves ${dir}/dist.new)"
+# `=404` rather than a fallback to /index.html, deliberately. The cutover check
+# fetches the page AND the first script the page references; with a fallback,
+# a missing script is answered with index.html and a 200, so a build that lost
+# its assets passes the check and goes live broken. This vhost only ever serves
+# those two requests, so it has no use for a fallback.
 cat > "$CANDIDATE_CONF" <<NGINX
 # Mobile Delivery: checks ${app}'s new version before it replaces the live one.
 # Reachable only from this server. Written by add-static-app.sh.
@@ -69,7 +74,8 @@ server {
     server_name _;
     root ${dir}/dist.new;
     index index.html;
-    location / { try_files \$uri \$uri/ /index.html; }
+    # Never fall back here: a missing asset must answer 404 so the check sees it.
+    location / { try_files \$uri \$uri/ =404; }
 }
 NGINX
 echo "  $CANDIDATE_CONF on 127.0.0.1:${port}"
@@ -106,7 +112,10 @@ server {
 
     root ${dir}/dist;
     index index.html;
-    location / { try_files \$uri \$uri/ /index.html; }
+    # A multi-page site wants a real 404 for a wrong URL. If this becomes a
+    # single-page app with client-side routes, change =404 to /index.html so
+    # those routes resolve.
+    location / { try_files \$uri \$uri/ =404; }
 }
 NGINX
   echo "  $LIVE_CONF for ${domain}"
