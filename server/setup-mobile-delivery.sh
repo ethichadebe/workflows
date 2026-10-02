@@ -54,7 +54,10 @@ server {
     server_name _;
     root /opt/askus-frontend/frontend/dist.new;
     index index.html;
-    location / { try_files $uri $uri/ /index.html; }
+    # Never fall back to index.html here. The cutover check fetches the page and
+    # the first script it references; a fallback answers a missing script with
+    # index.html and a 200, so a build that lost its assets passes and goes live.
+    location / { try_files $uri $uri/ =404; }
 }
 NGINX
 nginx -t && systemctl reload nginx && echo "  nginx reloaded"
