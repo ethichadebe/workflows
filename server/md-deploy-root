@@ -25,6 +25,19 @@ case "$app" in
     API_NETWORK=api_default
     API_SERVICE=api
     ;;
+  portfolio)
+    # A static site: a folder of files, with no API beside it. Reuses the same
+    # frontend actions askus does — nothing new on the dispatcher side.
+    #
+    # PLACEHOLDERS. Confirm every value against the box before installing:
+    #   ls -la /opt/portfolio
+    #   nginx -T | grep -A3 'listen 127.0.0.1:8091'
+    APP_KIND=static
+    FRONT_DIR=/opt/portfolio                         # holds dist, dist.prev, dist.new
+    SITE_HOST=portfolio.example                      # the real domain
+    CANDIDATE_PORT=8091                              # see docs/static-destination.md
+    ;;
+
   accucery)
     # A compose app: several containers, built on CI and pulled here by digest.
     # The database is NOT one of them — it keeps running, untouched, across
@@ -54,7 +67,12 @@ esac
 
 # An action written for one shape of app must never run against another.
 case "$action" in
-  frontend-upload|frontend-cutover|backend-upload|backend-cutover)
+  frontend-upload|frontend-cutover)
+    case "$APP_KIND" in static|static-jar) ;;
+      *) echo "refused: '$action' is not for a $APP_KIND app" >&2; exit 2 ;;
+    esac
+    ;;
+  backend-upload|backend-cutover)
     [ "$APP_KIND" = "static-jar" ] || { echo "refused: '$action' is not for a $APP_KIND app" >&2; exit 2; }
     ;;
   compose-upload|compose-cutover)
@@ -129,8 +147,13 @@ case "$action" in
       log "frontend image: $(file_value "${APP_DIR}/.env" FRONTEND_IMAGE)"
       docker compose -f "${APP_DIR}/${COMPOSE_FILE}" --project-directory "$APP_DIR" ps 2>/dev/null || true
     else
-      log "frontend live: $(http_code --resolve "${SITE_HOST}:443:127.0.0.1" -k "https://${SITE_HOST}/")"
-      log "api live:      $(http_code "http://127.0.0.1:${API_LIVE_PORT}${API_HEALTH_PATH}")"
+      log "site live:     $(http_code --resolve "${SITE_HOST}:443:127.0.0.1" -k "https://${SITE_HOST}/")"
+      # Only a static-jar app has an API beside the site; `set -u` would abort
+      # on a static app, where these are deliberately unset.
+      if [ "$APP_KIND" = "static-jar" ]; then
+        log "api live:      $(http_code "http://127.0.0.1:${API_LIVE_PORT}${API_HEALTH_PATH}")"
+      fi
+      log "candidate vhost: $(http_code "http://127.0.0.1:${CANDIDATE_PORT}/") (200 only mid-cutover)"
       # Which of the three folders exist, and when each was last written.
       # dist is live, dist.prev is what a rollback would restore, and a
       # lingering dist.new means a cutover stopped part way.
