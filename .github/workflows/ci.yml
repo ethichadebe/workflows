@@ -14,7 +14,8 @@ jobs:
 
       - name: Parse every script
         run: |
-          for f in server/md-deploy server/md-deploy-root server/*.sh scripts/*.sh; do
+          for f in server/md-deploy server/md-deploy-root server/*.sh scripts/*.sh \
+                   .github/actions/notify/*.sh; do
             [ -f "$f" ] || continue
             bash -n "$f" && echo "ok  $f"
           done
@@ -26,3 +27,26 @@ jobs:
 
       - name: Deploy dispatcher rules
         run: bash server/md-deploy-root.test.sh
+
+      # The bot has a voice, so the wording changes. These assert that no
+      # wording can drop the app name, the "your site is fine" line or the link.
+      - name: Alert messages keep their facts
+        run: bash .github/actions/notify/notify.test.sh
+
+      # Catches a typo in the action definition or a workflow that passes an
+      # input the action does not declare.
+      - name: Workflow and action files parse
+        run: |
+          python3 -c 'import yaml' 2>/dev/null || pip install --quiet pyyaml
+          python3 - <<'PY'
+          import pathlib, sys, yaml
+          bad = 0
+          for f in sorted(pathlib.Path('.github').rglob('*.yml')):
+              try:
+                  yaml.safe_load(f.read_text())
+                  print('ok  ', f)
+              except Exception as e:
+                  bad = 1
+                  print('FAIL', f, e)
+          sys.exit(bad)
+          PY

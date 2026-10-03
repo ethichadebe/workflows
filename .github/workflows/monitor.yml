@@ -56,15 +56,14 @@ jobs:
             exit 1
           fi
 
+      # The voice lives in .github/actions/notify, so the monitor and the
+      # deploys sound like one bot rather than two.
       - name: Alert
         if: failure()
-        env:
-          FAILS: ${{ steps.check.outputs.fails }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          detail="${FAILS:-$(printf '\n- see the run for details')}"
-          text=$(printf 'Site check failed:%s\n\n%s' "$detail" "$RUN_URL")
-          curl -s --max-time 20 -o /dev/null \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=$text"
+        uses: ethichadebe/workflows/.github/actions/notify@main
+        with:
+          event: site-down
+          detail: ${{ steps.check.outputs.fails }}
+          url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}

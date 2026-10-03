@@ -109,25 +109,28 @@ jobs:
       - name: Check the candidate and cut over
         run: ssh -i ~/.ssh/md_deploy -o BatchMode=yes deploy@${{ secrets.VPS_HOST }} "compose-cutover ${{ inputs.app }}"
 
+      # The voice lives in .github/actions/notify. Pinned to @main rather than a
+      # relative path: a reusable workflow resolves "./" against the *calling*
+      # repo's checkout, which is the app, not this repo.
       - name: Say it worked
         if: success()
-        env:
-          MSG: ${{ github.event.head_commit.message || github.sha }}
-        run: |
-          curl -s --max-time 20 -o /dev/null \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=OK ${{ inputs.app }} is live: $MSG"
+        uses: ethichadebe/workflows/.github/actions/notify@main
+        with:
+          event: deploy-ok
+          app: ${{ inputs.app }}
+          commit: ${{ github.event.head_commit.message || github.sha }}
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       # A failed deploy means the candidate was discarded, so the live version
       # is still serving. The message says so, to avoid a panic.
       - name: Say it failed
         if: failure()
-        env:
-          MSG: ${{ github.event.head_commit.message || github.sha }}
-          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          curl -s --max-time 20 -o /dev/null \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=FAILED: ${{ inputs.app }} deploy. Your live version is untouched. $MSG -- $URL"
+        uses: ethichadebe/workflows/.github/actions/notify@main
+        with:
+          event: deploy-failed
+          app: ${{ inputs.app }}
+          commit: ${{ github.event.head_commit.message || github.sha }}
+          url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}

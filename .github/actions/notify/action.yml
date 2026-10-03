@@ -1,0 +1,51 @@
+name: Notify
+description: Send one Mobile Delivery message to Telegram, in the delivery bot's voice.
+
+# Why a composite action and not a script in this repo: the shared deploy
+# workflows run `actions/checkout` against the *caller's* repo, so nothing from
+# this repo is on the runner's disk. An action is fetched by the runner on its
+# own, so this works from a workflow running inside an Onboarded repo without
+# that repo adding a step, a file or a secret.
+#
+# Every message the workflow sends goes through here, so the voice is defined
+# once. `voice.sh` is the only file that decides wording.
+
+inputs:
+  event:
+    description: deploy-ok | deploy-failed | site-down | drift
+    required: true
+  app:
+    description: The app name, for the events that concern one app.
+    required: false
+    default: ""
+  commit:
+    description: The commit message or sha being deployed.
+    required: false
+    default: ""
+  url:
+    description: Link to the run, so the message is actionable.
+    required: false
+    default: ""
+  detail:
+    description: Extra lines, e.g. which site checks failed.
+    required: false
+    default: ""
+  bot-token:
+    required: true
+  chat-id:
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        EVENT: ${{ inputs.event }}
+        APP: ${{ inputs.app }}
+        COMMIT: ${{ inputs.commit }}
+        RUN_URL: ${{ inputs.url }}
+        DETAIL: ${{ inputs.detail }}
+        TELEGRAM_BOT_TOKEN: ${{ inputs.bot-token }}
+        TELEGRAM_CHAT_ID: ${{ inputs.chat-id }}
+        SEED: ${{ github.run_id }}
+      run: bash "$GITHUB_ACTION_PATH/notify.sh"
