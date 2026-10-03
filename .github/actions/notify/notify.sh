@@ -27,13 +27,42 @@ esc() {
 }
 
 # A commit message can be a paragraph. Only the subject belongs in a push alert.
+#
+# Except on a merge commit, where the subject is "Merge pull request #13 from
+# owner/branch" and the line that says what actually changed is the first line
+# of the body. Nearly every deploy here is a merge, so taking the subject alone
+# reports the branch name and drops the whole point of the change.
 subject() {
-  local s=${1-}
-  s=${s%%$'\n'*}
-  if [ "${#s}" -gt 120 ]; then
-    s="${s:0:119}…"
+  local s=${1-} line body pr=""
+
+  local first=${s%%$'\n'*}
+  case "$first" in
+    "Merge pull request #"*|"Merge branch "*|"Merge remote-tracking branch "*)
+      # Keep the PR number if there is one — it is the only part of the merge
+      # line worth carrying.
+      case "$first" in
+        "Merge pull request #"*)
+          pr=${first#Merge pull request #}
+          pr=${pr%% *}
+          case "$pr" in (*[!0-9]*|'') pr="" ;; esac
+          ;;
+      esac
+      body=${s#*$'\n'}
+      if [ "$body" != "$s" ]; then
+        while IFS= read -r line; do
+          [ -n "${line//[[:space:]]/}" ] || continue
+          first=$line
+          [ -n "$pr" ] && first="$first (#$pr)"
+          break
+        done <<< "$body"
+      fi
+      ;;
+  esac
+
+  if [ "${#first}" -gt 120 ]; then
+    first="${first:0:119}…"
   fi
-  printf '%s' "$s"
+  printf '%s' "$first"
 }
 
 # Deterministic per run, varied across runs: the same run always renders the
