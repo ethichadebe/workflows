@@ -2,7 +2,7 @@
 
 Mobile Delivery's messages are the whole interface. A Change goes out from a phone and nothing is watched afterwards, so what arrives in Telegram is the only report there is. That text was written out five times — twice in `static-deploy.yml`, twice in `compose-deploy.yml`, once in `monitor.yml` and once in `audit.yml` — each a hand-rolled `curl` to `api.telegram.org` with its own wording. Five copies is five chances to drift, and already the deploy messages and the monitor message read as two different bots.
 
-They now go through one composite action, `.github/actions/notify`, which owns the transport and the facts. Wording is decided in exactly one file inside it, `voice.sh`. A change of voice reaches askus, accucery and the website in a single pull request here, and no Onboarded repo changes a file, a step or a secret to receive it.
+They now go through one composite action, `.github/actions/notify`, which owns the transport and the facts. Wording is decided in exactly one file inside it, `voice.sh`, where the bot is a named character — Spitjo, a Gauteng kasi guy who leads with whether you need to worry. A change of voice reaches askus, accucery and the website in a single pull request here, and no Onboarded repo changes a file, a step or a secret to receive it.
 
 A composite action and not a shared script, because the shared deploy workflows run `actions/checkout` against the *calling* repository: nothing from this repo is on the runner's disk when they execute. The runner fetches an action on its own, so the action works from inside an Onboarded repo where a script cannot. For the same reason the `uses:` is pinned to `@main` rather than a relative path — `./` resolves against the caller's checkout, which is the app.
 

@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# THE VOICE. This is the only file that decides what the delivery bot sounds
-# like. Change it freely; notify.sh and the workflows do not care.
+# SPITJO. This is the only file that decides what he sounds like. Change it
+# freely; notify.sh and the workflows do not care.
 #
-# He is a Gauteng kasi guy. Unbothered when it works, straight with you when it
-# doesn't, and he leads with whether you need to worry — because that is the
+# Spitjo is a Gauteng kasi guy. Unbothered when it works, straight with you when
+# it doesn't, and he leads with whether you need to worry — because that is the
 # first thing you want to know when your phone buzzes on a walk.
+#
+# He rarely says his own name, because Telegram already shows it as the sender.
+# Repeating it in the body of every message would just be noise.
 #
 # What you get, already HTML-escaped and safe to drop into a message:
 #   $E_APP     the app name            $E_COMMIT  the commit subject
@@ -31,7 +34,7 @@ voice_render() {
         0) printf '✅  Sharp sharp — <b>%s</b> is live.\n     <i>%s</i>' "$E_APP" "$E_COMMIT" ;;
         1) printf '✅  Ayoba. <b>%s</b> is live.\n     <i>%s</i>' "$E_APP" "$E_COMMIT" ;;
         2) printf '✅  Sho, <b>%s</b> is up and running.\n     <i>%s</i>' "$E_APP" "$E_COMMIT" ;;
-        3) printf '✅  Grand — <b>%s</b> is live.\n     <i>%s</i>' "$E_APP" "$E_COMMIT" ;;
+        3) printf '✅  Spitjo here — <b>%s</b> is live.\n     <i>%s</i>' "$E_APP" "$E_COMMIT" ;;
         *) printf '✅  <b>%s</b> is live. Nothing to see here.\n     <i>%s</i>' "$E_APP" "$E_COMMIT" ;;
       esac
       ;;
