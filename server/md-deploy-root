@@ -32,14 +32,19 @@ case "$app" in
     # Confirm against the box before installing:
     #   ls -la /opt/portfolio
     #   nginx -T | grep -A3 'listen 127.0.0.1:8091'
-    #   nginx -T | grep 'server_name www.ethichadebe.com'
+    #   nginx -T | grep 'server_name www.ethichadebe.me'
     #
     # SITE_HOST is only ever fetched with --resolve pointing at 127.0.0.1, so
     # the check hits this box's own vhost. That is what lets the whole path be
-    # proven while DNS still points at the old host.
+    # proven before DNS points at this box at all.
+    #
+    # It must track the live vhost's server_name. The site moved to
+    # www.ethichadebe.me; the check only kept passing on the old name because
+    # the vhost still answered to both, and would have started failing — and
+    # rolling back a working deploy — the moment the old name was dropped.
     APP_KIND=static
     FRONT_DIR=/opt/portfolio                         # holds dist, dist.prev, dist.new
-    SITE_HOST=www.ethichadebe.com                    # must match the nginx server_name
+    SITE_HOST=www.ethichadebe.me                     # must match the nginx server_name
     CANDIDATE_PORT=8091                              # see docs/static-destination.md
     ;;
 

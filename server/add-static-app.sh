@@ -2,8 +2,8 @@
 # Mobile Delivery: prepare the server for one static app, before its first deploy.
 #
 #   bash add-static-app.sh <app> <domain> <candidate-port> <dir> [spa]
-#   bash add-static-app.sh portfolio www.ethichadebe.com 8091 /opt/portfolio
-#   bash add-static-app.sh portfolio www.ethichadebe.com 8091 /opt/portfolio spa
+#   bash add-static-app.sh portfolio www.ethichadebe.me 8091 /opt/portfolio
+#   bash add-static-app.sh portfolio www.ethichadebe.me 8091 /opt/portfolio spa
 #
 # Pass `spa` for a single-page app whose routes are handled in the browser —
 # React Router, Vue Router and the like. Without it a URL with no matching file
