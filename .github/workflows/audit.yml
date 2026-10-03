@@ -35,11 +35,9 @@ jobs:
       # not an outage, so the message says what it is.
       - name: Alert
         if: failure()
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          text=$(printf 'Onboarded repos have drifted from the delivery decisions. Nothing is down.\n\n%s' "$RUN_URL")
-          curl -s --max-time 20 -o /dev/null \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=$text"
+        uses: ethichadebe/workflows/.github/actions/notify@main
+        with:
+          event: drift
+          url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
