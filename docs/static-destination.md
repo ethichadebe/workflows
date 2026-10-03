@@ -46,9 +46,25 @@ by hand — this box is already serving other sites, and a typo in an nginx file
 is an outage. It is safe to re-run and changes nothing already correct.
 
 ```bash
-curl -fsSL -o /tmp/add-static-app.sh \
-  https://raw.githubusercontent.com/ethichadebe/workflows/main/server/add-static-app.sh
-bash /tmp/add-static-app.sh yourapp yourapp.example 8091 /opt/yourapp
+curl -fsSL -H "Accept: application/vnd.github.raw" -o /tmp/add-static-app.sh \
+  "https://api.github.com/repos/ethichadebe/workflows/contents/server/add-static-app.sh?ref=main"
+
+bash /tmp/add-static-app.sh yourapp yourapp.example 8091 /opt/yourapp        # multi-page site
+bash /tmp/add-static-app.sh yourapp yourapp.example 8091 /opt/yourapp spa    # single-page app
+```
+
+Pass `spa` when routes are handled in the browser — React Router, Vue Router
+and the like — so a URL with no matching file serves `index.html` and the app
+routes it. Without it such a URL gets a real 404, which is what a multi-page
+site wants. Getting it wrong shows up immediately: every route but `/` 404s on
+a refresh. Only the live vhost changes; the candidate vhost is always `=404`.
+
+Fetch through the API rather than `raw.githubusercontent.com`: raw is cached
+for several minutes, so straight after a merge it serves the old file and you
+debug a fix that was never on the box. Check what you got before running it:
+
+```bash
+grep try_files /tmp/add-static-app.sh
 ```
 
 It creates the app's directory, the localhost-only candidate vhost on the port

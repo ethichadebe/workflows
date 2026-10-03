@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # Mobile Delivery: prepare the server for one static app, before its first deploy.
 #
-#   bash add-static-app.sh <app> <domain> <candidate-port> <dir>
+#   bash add-static-app.sh <app> <domain> <candidate-port> <dir> [spa]
 #   bash add-static-app.sh portfolio www.ethichadebe.com 8091 /opt/portfolio
+#   bash add-static-app.sh portfolio www.ethichadebe.com 8091 /opt/portfolio spa
+#
+# Pass `spa` for a single-page app whose routes are handled in the browser —
+# React Router, Vue Router and the like. Without it a URL with no matching file
+# gets a real 404, which is what a multi-page site wants. With it, those URLs
+# serve index.html so the app can route them itself. Getting this wrong is
+# visible immediately: every route but "/" 404s on a refresh.
 #
 # Run as root. Safe to re-run: it changes nothing that is already correct.
 #
@@ -22,9 +29,23 @@ set -euo pipefail
 die() { echo "refused: $*" >&2; exit 2; }
 
 [ "$(id -u)" = "0" ] || die "run this as root"
-[ "$#" = "4" ] || die "usage: $0 <app> <domain> <candidate-port> <dir>"
+case "$#" in 4|5) ;; *) die "usage: $0 <app> <domain> <candidate-port> <dir> [spa]" ;; esac
 
-app="$1"; domain="$2"; port="$3"; dir="$4"
+app="$1"; domain="$2"; port="$3"; dir="$4"; mode="${5:-mpa}"
+case "$mode" in spa|mpa) ;; *) die "fifth argument must be 'spa' or omitted, not '$mode'" ;; esac
+
+# Only the live vhost differs. The candidate vhost is always =404: the cutover
+# check fetches the page and the first script it references, and a fallback
+# answers a missing script with index.html and a 200, so a build that lost its
+# assets would pass the check and go live broken.
+if [ "$mode" = "spa" ]; then
+  LIVE_FALLBACK='/index.html'
+  LIVE_NOTE='# Single-page app: unmatched URLs serve index.html so the browser can route them.'
+else
+  LIVE_FALLBACK='=404'
+  LIVE_NOTE='# Multi-page site: an unmatched URL gets a real 404. For a single-page app with
+    # client-side routes, re-run this script with `spa` as the fifth argument.'
+fi
 
 # Same rule the dispatcher applies: plain lowercase, no paths, no shell characters.
 case "$app" in "" | *[!a-z0-9-]*) die "app name '$app' must be plain lowercase" ;; esac
@@ -95,9 +116,10 @@ else
   echo "  self-signed certificate created for ${domain} (replace with certbot after DNS moves)"
 fi
 
-say "4. live vhost"
+say "4. live vhost (${mode})"
 if [ -f "$LIVE_CONF" ]; then
   echo "  $LIVE_CONF already exists, left alone"
+  echo "  (delete it and re-run if you need it regenerated — spa/mpa, say)"
 else
   cat > "$LIVE_CONF" <<NGINX
 # Mobile Delivery: ${app}'s live site. Written by add-static-app.sh.
@@ -112,10 +134,8 @@ server {
 
     root ${dir}/dist;
     index index.html;
-    # A multi-page site wants a real 404 for a wrong URL. If this becomes a
-    # single-page app with client-side routes, change =404 to /index.html so
-    # those routes resolve.
-    location / { try_files \$uri \$uri/ =404; }
+    ${LIVE_NOTE}
+    location / { try_files \$uri \$uri/ ${LIVE_FALLBACK}; }
 }
 NGINX
   echo "  $LIVE_CONF for ${domain}"
