@@ -55,9 +55,17 @@ pick() {
   printf '%s' "$1"
 }
 
+# variant 4 -> a number in 0..3, stable for this run. Lets voice.sh write each
+# phrasing out as a whole literal line rather than assembling it from fragments.
+variant() {
+  printf '%s' "$(( $(seed_num) % $1 ))"
+}
+
 E_APP=$(esc "${APP:-the app}")
 E_COMMIT=$(esc "$(subject "$COMMIT")")
-E_DETAIL=$(esc "$DETAIL")
+# The monitor hands these over as "\n- name: reason" lines. Indent them to sit
+# under the sentence above, so the message reads as one block on a phone.
+E_DETAIL=$(esc "$DETAIL" | sed -e 's/^[[:space:]]*$//' -e '/./s/^/     /')
 E_URL=$(esc "$RUN_URL")
 export E_APP E_COMMIT E_DETAIL E_URL
 
