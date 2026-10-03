@@ -2,8 +2,8 @@
 # Mobile Delivery: prepare the server for one static app, before its first deploy.
 #
 #   bash add-static-app.sh <app> <domain> <candidate-port> <dir> [spa]
-#   bash add-static-app.sh portfolio www.ethichadebe.com 8091 /opt/portfolio
-#   bash add-static-app.sh portfolio www.ethichadebe.com 8091 /opt/portfolio spa
+#   bash add-static-app.sh portfolio www.ethichadebe.me 8091 /opt/portfolio
+#   bash add-static-app.sh portfolio www.ethichadebe.me 8091 /opt/portfolio spa
 #
 # Pass `spa` for a single-page app whose routes are handled in the browser —
 # React Router, Vue Router and the like. Without it a URL with no matching file
@@ -156,6 +156,17 @@ echo
 echo "  Or exercise the same locked path a real deploy takes, sudo rule included:"
 echo "    sudo -u deploy SSH_ORIGINAL_COMMAND='status ${app}' /usr/local/bin/md-deploy"
 echo
-echo "  Two 404s is the correct answer before the first deploy: nginx is"
-echo "  answering, but ${dir}/dist and dist.new do not exist yet. A 000 means"
-echo "  nginx is not listening where it should be."
+# What "nothing deployed yet" looks like differs by mode, and both are fine.
+# A site vhost that falls back to /index.html has nowhere to fall back to
+# until the first deploy, so nginx hits an internal redirect cycle and says
+# 500. Saying so here, because a 500 that is expected reads exactly like a
+# 500 that is not.
+if [ "$mode" = "spa" ]; then
+  echo "  Before the first deploy, expect:  site live 500, candidate vhost 404."
+  echo "  The 500 is right: this is a single-page app, so the site vhost falls"
+  echo "  back to index.html, which does not exist until something is deployed."
+else
+  echo "  Before the first deploy, expect:  two 404s."
+fi
+echo "  Either way nginx is answering; ${dir}/dist and dist.new just do not"
+echo "  exist yet. A 000 means nginx is not listening where it should be."
