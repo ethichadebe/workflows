@@ -102,6 +102,37 @@ multi=$(NOTIFY_RENDER_ONLY=1 EVENT=deploy-ok SEED=1 APP=askus \
 want    "the subject is kept" "$multi" "the subject line"
 wantnot "the body is dropped" "$multi" "nobody needs"
 
+echo "a merge commit reports the change, not the branch name"
+# Nearly every deploy here is a merge, so this is the common case, not an edge.
+msg() {
+  NOTIFY_RENDER_ONLY=1 EVENT=deploy-ok SEED=1 APP=portfolio COMMIT="$1" \
+    bash "$here/notify.sh"
+}
+
+m=$(msg "$(printf 'Merge pull request #13 from ethichadebe/claude/fervent-rubin-1mk2v3\n\nfeat: ship the redesign, with lint cleared')")
+want    "the change is reported"      "$m" "feat: ship the redesign, with lint cleared"
+want    "the PR number is kept"       "$m" "(#13)"
+wantnot "the branch name is dropped"  "$m" "fervent-rubin"
+wantnot "the merge boilerplate is dropped" "$m" "Merge pull request"
+
+m=$(msg "$(printf 'Merge branch '"'"'main'"'"' into feature\n\nfix: the thing')")
+want    "a plain branch merge also reports the change" "$m" "fix: the thing"
+wantnot "no stray PR number"                           "$m" "(#"
+
+# A merge with no body is all we have, so it has to survive rather than vanish.
+m=$(msg "Merge pull request #13 from ethichadebe/some-branch")
+want "a bodyless merge still says something" "$m" "Merge pull request #13"
+
+# An ordinary commit must be untouched by any of the above.
+m=$(msg "$(printf 'fix the login redirect\n\na long body nobody needs on a phone')")
+want    "an ordinary subject is kept" "$m" "fix the login redirect"
+wantnot "its body is still dropped"   "$m" "nobody needs"
+
+# A squash merge already carries the number in the subject; do not double it.
+m=$(msg "feat: add the thing (#42)")
+want    "a squash subject is kept as is" "$m" "feat: add the thing (#42)"
+wantnot "no doubled number"              "$m" "(#42) (#"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

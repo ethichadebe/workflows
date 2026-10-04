@@ -48,6 +48,28 @@ case "$app" in
     CANDIDATE_PORT=8091                              # see docs/static-destination.md
     ;;
 
+  bm-attorneys)
+    # Baloyi & Myeni Attorneys Inc. A landing page: a folder of files with no
+    # API beside it, so it reuses the same frontend actions askus and portfolio
+    # do — nothing new on the dispatcher side.
+    #
+    # Confirm against the box before installing:
+    #   ls -la /opt/bm-attorneys
+    #   nginx -T | grep -A3 'listen 127.0.0.1:8092'
+    #   nginx -T | grep 'server_name bm.ethichadebe.me'
+    #
+    # It starts on a subdomain so the firm can see the real thing before any
+    # domain moves. They already hold baloyiandmyeniattorneys.co.za — the email
+    # on their profile is on it. When that domain points here, SITE_HOST and the
+    # vhost's server_name change together, in that order, or the post-cutover
+    # check rolls back a deploy that worked. That exact trap cost us a morning
+    # on portfolio; the comment is here so it does not cost a second one.
+    APP_KIND=static
+    FRONT_DIR=/opt/bm-attorneys                      # holds dist, dist.prev, dist.new
+    SITE_HOST=bm.ethichadebe.me                      # must match the nginx server_name
+    CANDIDATE_PORT=8092                              # see docs/static-destination.md
+    ;;
+
   accucery)
     # A compose app: several containers, built on CI and pulled here by digest.
     # The database is NOT one of them — it keeps running, untouched, across
