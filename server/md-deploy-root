@@ -91,6 +91,32 @@ case "$app" in
     CANDIDATE_FRONTEND_PORT=18081
     MIGRATION_STYLE=prisma
     ;;
+  atapp)
+    # Atapp: art of the day from the National Gallery of Art's open data.
+    # A compose app of the same shape as accucery — frontend, backend, and a
+    # database that deploys never touch.
+    #
+    # History worth knowing: this app had a server API once (on Heroku), lost
+    # it when free dynos ended, and moved its scraping onto the phone. This
+    # block puts the server back, on a box we control. The web version also
+    # exists so iOS can reach it at all.
+    #
+    # These values must match the box. Confirm with:
+    #   docker compose -f /opt/atapp/docker-compose.prod.yml ps
+    #   docker network ls | grep atapp
+    APP_KIND=compose
+    APP_DIR=/opt/atapp
+    COMPOSE_FILE=docker-compose.prod.yml
+    REGISTRY_PREFIX=ghcr.io/ethichadebe/atapp-android   # lowercase, as ghcr stores it
+    LIVE_NETWORK=atapp_default
+    # 3000 and 13000 are accucery's, 18080/18081 are askus's and accucery's.
+    # Candidate ports are published on the host, so they are host-wide.
+    BACKEND_PORT=3001
+    BACKEND_HEALTH_PATHS="/health /artworks/today"
+    CANDIDATE_BACKEND_PORT=13001
+    CANDIDATE_FRONTEND_PORT=18082
+    MIGRATION_STYLE=prisma
+    ;;
   *)
     echo "refused: unknown app '${app}'" >&2
     exit 2
