@@ -133,6 +133,71 @@ m=$(msg "feat: add the thing (#42)")
 want    "a squash subject is kept as is" "$m" "feat: add the thing (#42)"
 wantnot "no doubled number"              "$m" "(#42) (#"
 
+echo "the Claude line is strictly an addition"
+# It is allowed to be absent, wrong, or slow. It is never allowed to change a
+# fact, reshape a message, or reach the one alert that must not wait.
+
+# 1. No key is the default, and must be byte-for-byte what shipped before it.
+with=$(render deploy-ok 7)
+without=$(NOTIFY_RENDER_ONLY=1 NOTIFY_NO_FLAVOUR=1 EVENT=deploy-ok SEED=7 APP="askus" \
+  COMMIT="fix the login redirect" \
+  RUN_URL="https://github.com/o/r/actions/runs/123" bash "$here/notify.sh")
+if [ "$with" = "$without" ]; then ok; else
+  fail=$((fail + 1)); printf 'FAIL: no key changed the message\n  %s\n  %s\n' "$with" "$without"
+fi
+
+# 2. flavour.sh must not reach the network for the events it has no business
+#    on. A fake key proves it returns before curl rather than because of it.
+for ev in site-down drift not-an-event; do
+  out=$(ANTHROPIC_API_KEY=sk-not-a-real-key EVENT=$ev APP=askus \
+    COMMIT="fix the login redirect" bash "$here/flavour.sh" 2>/dev/null)
+  if [ -z "$out" ]; then ok; else
+    fail=$((fail + 1)); echo "FAIL: flavour.sh spoke on $ev: $out"
+  fi
+done
+
+# 3. A commit with nothing in it has nothing to react to.
+out=$(ANTHROPIC_API_KEY=sk-not-a-real-key EVENT=deploy-ok APP=askus COMMIT="   " \
+  bash "$here/flavour.sh" 2>/dev/null)
+if [ -z "$out" ]; then ok; else fail=$((fail + 1)); echo "FAIL: spoke on an empty commit"; fi
+
+# 4. With a stub standing in for the API, the line is appended and escaped,
+#    and no stub output can break the message apart.
+stub_dir=$(mktemp -d)
+cp "$here/notify.sh" "$here/voice.sh" "$stub_dir/"
+stub() { printf '#!/usr/bin/env bash\nprintf %%s %s\n' "$(printf '%q' "$1")" > "$stub_dir/flavour.sh"; }
+run_stub() {
+  NOTIFY_RENDER_ONLY=1 EVENT=deploy-ok SEED=7 APP="askus" \
+    COMMIT="fix the login redirect" RUN_URL="https://example.com/r/1" \
+    bash "$stub_dir/notify.sh" 2>/dev/null
+}
+
+stub "The dance survived the port."
+m=$(run_stub)
+want "the line is appended"        "$m" "The dance survived the port."
+want "the facts are still there"   "$m" "askus"
+want "the commit is still there"   "$m" "fix the login redirect"
+
+stub '</i><script>alert(1)</script>'
+m=$(run_stub)
+wantnot "a script tag cannot survive" "$m" "<script>"
+want    "it is escaped instead"       "$m" "&lt;script&gt;"
+
+stub "$(printf 'line one\nline two\nline three')"
+m=$(run_stub)
+lines_added=$(printf '%s' "$m" | grep -c 'line one')
+if [ "$lines_added" = "1" ]; then ok; else
+  fail=$((fail + 1)); echo "FAIL: a multi-line answer did not stay one line"
+fi
+want  "its later lines are folded in"      "$m" "line two"
+
+stub ""
+m=$(run_stub)
+if [ "$m" = "$without" ]; then ok; else
+  fail=$((fail + 1)); printf 'FAIL: an empty answer changed the message\n  %s\n' "$m"
+fi
+rm -rf "$stub_dir"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

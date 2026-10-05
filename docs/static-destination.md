@@ -154,6 +154,11 @@ first symptom is a merge that silently does nothing.
 **4. Secrets:** `VPS_DEPLOY_KEY`, `VPS_HOST`, `TELEGRAM_BOT_TOKEN`,
 `TELEGRAM_CHAT_ID`.
 
+`ANTHROPIC_API_KEY` is optional. With it, Claude adds one line to each deploy
+message reacting to what shipped; without it the message is exactly what
+`voice.sh` renders, which is how a repo opts in or out one at a time
+(ADR-0009).
+
 **5. Add the app's repo to `ONBOARDED_REPOS`** so the audit watches it
 (`docs/audit.md`).
 

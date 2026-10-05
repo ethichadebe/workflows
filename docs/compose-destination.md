@@ -82,6 +82,11 @@ jobs:
 The repo needs `VPS_DEPLOY_KEY`, `VPS_HOST`, `TELEGRAM_BOT_TOKEN` and
 `TELEGRAM_CHAT_ID`.
 
+`ANTHROPIC_API_KEY` is optional. With it, Claude adds one line to each deploy
+message reacting to what shipped; without it the message is exactly what
+`voice.sh` renders, which is how a repo opts in or out one at a time
+(ADR-0009).
+
 **5. Let the server read the images.** Packages pushed to ghcr start private.
 For a public repo, make both packages public under the repository's Packages
 settings. For a private one, `docker login ghcr.io` on the box once with a
