@@ -109,6 +109,22 @@ if [ -z "${text//[[:space:]]/}" ]; then
   text=$(printf '%s: %s %s\n%s' "$EVENT" "$E_APP" "$E_COMMIT" "$E_URL")
 fi
 
+# One line of reaction to what shipped, from Claude. Strictly an addition: it
+# runs only where flavour.sh allows it, only when a key is set, and its failure
+# is silence. The facts above it are already final by this point, so nothing it
+# does — timing out, erroring, returning nonsense — can change them.
+if [ -z "${NOTIFY_NO_FLAVOUR:-}" ]; then
+  flavour=$(EVENT="$EVENT" APP="$APP" COMMIT="$(subject "$COMMIT")" \
+    bash "$here/flavour.sh" 2>/dev/null || true)
+  # flavour.sh collapses newlines already; do it here too, because this file
+  # is what guarantees the message's shape and must not rely on that one.
+  flavour=$(printf '%s' "$flavour" | tr '\n\r\t' '   ')
+  if [ -n "${flavour//[[:space:]]/}" ]; then
+    text="${text}"$'\n'"     <i>$(esc "$flavour")</i>"
+    echo "notify: flavour line: ${flavour}" >&2
+  fi
+fi
+
 # NOTIFY_RENDER_ONLY lets the test suite read every message this can produce
 # without a token and without sending anything.
 if [ -n "${NOTIFY_RENDER_ONLY:-}" ]; then

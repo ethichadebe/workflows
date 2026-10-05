@@ -30,6 +30,13 @@ inputs:
     description: Extra lines, e.g. which site checks failed.
     required: false
     default: ""
+  anthropic-api-key:
+    description: >
+      Optional. When set, Claude adds one line reacting to what shipped.
+      Absent, the message is exactly what this repo's voice.sh renders — which
+      is how a repo opts in or out, one repo at a time.
+    required: false
+    default: ""
   bot-token:
     required: true
   chat-id:
@@ -47,5 +54,6 @@ runs:
         DETAIL: ${{ inputs.detail }}
         TELEGRAM_BOT_TOKEN: ${{ inputs.bot-token }}
         TELEGRAM_CHAT_ID: ${{ inputs.chat-id }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         SEED: ${{ github.run_id }}
       run: bash "$GITHUB_ACTION_PATH/notify.sh"

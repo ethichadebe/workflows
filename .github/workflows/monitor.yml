@@ -65,5 +65,6 @@ jobs:
           event: site-down
           detail: ${{ steps.check.outputs.fails }}
           url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
