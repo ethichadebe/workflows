@@ -117,6 +117,38 @@ case "$app" in
     CANDIDATE_FRONTEND_PORT=18082
     MIGRATION_STYLE=prisma
     ;;
+  tlm)
+    # The Lazy Makoti. Was a hand-written static site; becomes a compose app so
+    # she can add recipes and products herself. Same shape as accucery.
+    #
+    # UPLOADS. This is the first app here that stores files a person uploads,
+    # and the deploy path has no opinion about them yet. The database survives
+    # a deploy because it is not one of the swapped containers; uploaded photos
+    # only survive if they live on a volume or host path outside the backend
+    # image. Write them inside the container and the next merge deletes every
+    # recipe photo she has added, silently, while reporting success.
+    #
+    # Until the dispatcher enforces that, it is the app's job: bind
+    # /opt/tlm/uploads into the backend and write there. Confirm with:
+    #   docker compose -f /opt/tlm/docker-compose.prod.yml config | grep -A3 volumes
+    #   ls /opt/tlm/uploads
+    #
+    # These values must match the box. Confirm with:
+    #   docker compose -f /opt/tlm/docker-compose.prod.yml ps
+    #   docker network ls | grep tlm
+    APP_KIND=compose
+    APP_DIR=/opt/tlm
+    COMPOSE_FILE=docker-compose.prod.yml
+    REGISTRY_PREFIX=ghcr.io/ethichadebe/tlm
+    LIVE_NETWORK=tlm_default
+    # 3000/13000 are accucery's, 3001/13001 atapp's, 18080-18082 taken.
+    BACKEND_PORT=3002
+    BACKEND_HEALTH_PATHS="/health /recipes"
+    CANDIDATE_BACKEND_PORT=13002
+    CANDIDATE_FRONTEND_PORT=18083
+    MIGRATION_STYLE=prisma
+    ;;
+
   *)
     echo "refused: unknown app '${app}'" >&2
     exit 2
