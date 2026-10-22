@@ -134,3 +134,17 @@ bash server/md-deploy-root.test.sh
 Runs anywhere, needs no server, and covers what the dispatcher accepts as an
 image, what it treats as a destructive migration, and how it edits `.env`
 without disturbing the other values.
+
+## A test copy of an app
+
+An app can have a second block for a test site, as `accucery-beta` is for
+`accucery`: the same `REGISTRY_PREFIX`, and the same `BACKEND_PORT` (the port
+inside the container, from the same image), but its own `APP_DIR`, its own
+`LIVE_NETWORK` and its own pair of candidate ports. The test copy has its own
+database, so a pull request's migrations run there first, never on the live
+data.
+
+The app's repository deploys to it from its own workflow, typically on every
+pull request, with `app: <name>-beta`. Setting up the copy on the box (its
+folder, `.env`, database and nginx site) is the app repository's to write down;
+Brittle-AI's is `scripts/setup-beta.sh`.

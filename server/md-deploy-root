@@ -117,6 +117,29 @@ case "$app" in
     CANDIDATE_FRONTEND_PORT=18082
     MIGRATION_STYLE=prisma
     ;;
+  accucery-beta)
+    # Accucery's test site, beta.accucery.com (password-protected). Every pull
+    # request on Brittle-AI deploys here first (its deploy-beta.yml), so the
+    # owner can try a change on a phone before merging it to the live app.
+    # The same images and shape as accucery, but its own folder, database and
+    # network: nothing here touches the live app or its data.
+    #
+    # These values must match the box. Confirm with:
+    #   docker compose -f /opt/accucery-beta/docker-compose.prod.yml ps
+    #   docker network ls | grep accucery-beta
+    APP_KIND=compose
+    APP_DIR=/opt/accucery-beta
+    COMPOSE_FILE=docker-compose.prod.yml
+    REGISTRY_PREFIX=ghcr.io/ethichadebe/brittle-ai
+    LIVE_NETWORK=accucery-beta_default
+    # The port inside the container, as accucery's: the same image.
+    BACKEND_PORT=3000
+    BACKEND_HEALTH_PATHS="/health /lists"            # nginx strips the /api prefix
+    # Host-wide: 13000/18081 are accucery's, 13001/18082 atapp's, 18080 askus's.
+    CANDIDATE_BACKEND_PORT=13002
+    CANDIDATE_FRONTEND_PORT=18083
+    MIGRATION_STYLE=prisma
+    ;;
   *)
     echo "refused: unknown app '${app}'" >&2
     exit 2
