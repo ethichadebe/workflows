@@ -101,14 +101,16 @@ check "registry ports are only set in the app case" \
 check "the app case refuses unknown apps" \
   "$(printf '%s\n' "$app_case" | grep -c "refused: unknown app")" "1"
 
-echo "registry ports are unique across apps"
+echo "candidate ports are unique across apps"
 # Candidate ports are published on the host, so two apps sharing one means the
 # second deploy fails to bind — and reads as a container fault, not a port one.
 # accucery and askus both had 18080 once; this is here so they cannot again.
-ports=$(grep -oE '^[[:space:]]+[A-Z_]*PORT=[0-9]+' "$DISPATCHER" | cut -d= -f2 | sort)
+# BACKEND_PORT is left out: it is the port inside the app's own container, so
+# two apps built from one image (accucery and accucery-beta) rightly share it.
+ports=$(grep -oE '^[[:space:]]+CANDIDATE_[A-Z_]*PORT=[0-9]+' "$DISPATCHER" | cut -d= -f2 | sort)
 dupes=$(printf '%s\n' "$ports" | uniq -d)
 if [ -z "$dupes" ]; then ok; else bad "ports used by more than one app: $(listed_dupes=$(echo "$dupes" | tr '\n' ' '); echo "$listed_dupes")"; fi
-check "found every registry port" "$(printf '%s\n' "$ports" | grep -c .)" "$(grep -cE '^[[:space:]]+[A-Z_]*PORT=[0-9]+' "$DISPATCHER")"
+check "found every candidate port" "$(printf '%s\n' "$ports" | grep -c .)" "$(grep -cE '^[[:space:]]+CANDIDATE_[A-Z_]*PORT=[0-9]+' "$DISPATCHER")"
 
 echo
 echo "$pass passed, $fail failed"
