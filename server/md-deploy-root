@@ -140,6 +140,66 @@ case "$app" in
     CANDIDATE_FRONTEND_PORT=18083
     MIGRATION_STYLE=prisma
     ;;
+  tlm)
+    # The Lazy Makoti. Was a hand-written static site; becomes a compose app so
+    # she can add recipes and products herself. Same shape as accucery.
+    #
+    # UPLOADS. This is the first app here that stores files a person uploads,
+    # and the deploy path has no opinion about them yet. The database survives
+    # a deploy because it is not one of the swapped containers; uploaded photos
+    # only survive if they live on a volume or host path outside the backend
+    # image. Write them inside the container and the next merge deletes every
+    # recipe photo she has added, silently, while reporting success.
+    #
+    # Until the dispatcher enforces that, it is the app's job: bind
+    # /opt/tlm/uploads into the backend and write there. Confirm with:
+    #   docker compose -f /opt/tlm/docker-compose.prod.yml config | grep -A3 volumes
+    #   ls /opt/tlm/uploads
+    #
+    # These values must match the box. Confirm with:
+    #   docker compose -f /opt/tlm/docker-compose.prod.yml ps
+    #   docker network ls | grep tlm
+    APP_KIND=compose
+    APP_DIR=/opt/tlm
+    COMPOSE_FILE=docker-compose.prod.yml
+    REGISTRY_PREFIX=ghcr.io/ethichadebe/tlm
+    LIVE_NETWORK=tlm_default
+    BACKEND_PORT=3002                                # inside the container
+    BACKEND_HEALTH_PATHS="/health /recipes"
+    # Host-wide: 13000/18081 accucery, 13001/18082 atapp, 13002/18083
+    # accucery-beta, 18080 askus.
+    CANDIDATE_BACKEND_PORT=13003
+    CANDIDATE_FRONTEND_PORT=18084
+    MIGRATION_STYLE=prisma
+    ;;
+
+  lunga-ndaba)
+    # A portfolio site for Lunga Ndaba, with a frontend and a backend. Same
+    # compose shape as accucery, so nothing new on the dispatcher side.
+    #
+    # BACKEND_HEALTH_PATHS is /health alone for now, which only proves the
+    # process is up. Add a path that reads real data as soon as the API has
+    # one: a backend that boots but cannot reach its database answers /health
+    # and fails everything else, and this check would pass it through.
+    #
+    # Uploads, if this site ever takes them, carry the same warning as tlm's
+    # block above: outside the backend image or the next merge deletes them.
+    #
+    # These values must match the box. Confirm with:
+    #   docker compose -f /opt/lunga-ndaba/docker-compose.prod.yml ps
+    #   docker network ls | grep lunga-ndaba
+    APP_KIND=compose
+    APP_DIR=/opt/lunga-ndaba
+    COMPOSE_FILE=docker-compose.prod.yml
+    REGISTRY_PREFIX=ghcr.io/ethichadebe/lunga-ndaba
+    LIVE_NETWORK=lunga-ndaba_default
+    BACKEND_PORT=3003                                # inside the container
+    BACKEND_HEALTH_PATHS="/health"
+    CANDIDATE_BACKEND_PORT=13004
+    CANDIDATE_FRONTEND_PORT=18085
+    MIGRATION_STYLE=prisma
+    ;;
+
   *)
     echo "refused: unknown app '${app}'" >&2
     exit 2
