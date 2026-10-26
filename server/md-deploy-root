@@ -177,13 +177,16 @@ case "$app" in
     # A portfolio site for Lunga Ndaba, with a frontend and a backend. Same
     # compose shape as accucery, so nothing new on the dispatcher side.
     #
-    # BACKEND_HEALTH_PATHS is /health alone for now, which only proves the
-    # process is up. Add a path that reads real data as soon as the API has
-    # one: a backend that boots but cannot reach its database answers /health
-    # and fails everything else, and this check would pass it through.
+    # Lunga is a photographer and videographer, so the work is the site. /work
+    # is checked as well as /health on purpose: a backend that boots but cannot
+    # reach its database answers /health and fails everything else, and a
+    # gallery site that cuts over with no gallery is the failure that matters.
     #
-    # Uploads, if this site ever takes them, carry the same warning as tlm's
-    # block above: outside the backend image or the next merge deletes them.
+    # UPLOADS. He adds his own work, so this carries tlm's hazard and worse —
+    # the files are large and irreplaceable. They must live outside the backend
+    # image or the next merge deletes every photo he has uploaded, silently,
+    # while the deploy reports success. Until the dispatcher enforces it, bind
+    # /opt/lunga-ndaba/uploads into the backend.
     #
     # These values must match the box. Confirm with:
     #   docker compose -f /opt/lunga-ndaba/docker-compose.prod.yml ps
@@ -194,7 +197,7 @@ case "$app" in
     REGISTRY_PREFIX=ghcr.io/ethichadebe/lunga-ndaba
     LIVE_NETWORK=lunga-ndaba_default
     BACKEND_PORT=3003                                # inside the container
-    BACKEND_HEALTH_PATHS="/health"
+    BACKEND_HEALTH_PATHS="/health /work"
     CANDIDATE_BACKEND_PORT=13004
     CANDIDATE_FRONTEND_PORT=18085
     MIGRATION_STYLE=prisma
