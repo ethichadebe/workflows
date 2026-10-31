@@ -140,6 +140,27 @@ case "$app" in
     CANDIDATE_FRONTEND_PORT=18083
     MIGRATION_STYLE=prisma
     ;;
+  lunga-ndaba)
+    # Lunga Ndaba's portfolio: a compose app of the same shape as atapp, with
+    # one addition: his photographs live in /opt/lunga-ndaba/uploads on the
+    # host, mounted into the backend. A deploy never touches that folder or
+    # the database.
+    #
+    # These values must match the box. Confirm with:
+    #   docker compose -f /opt/lunga-ndaba/docker-compose.prod.yml ps
+    #   docker network ls | grep lunga-ndaba
+    APP_KIND=compose
+    APP_DIR=/opt/lunga-ndaba
+    COMPOSE_FILE=docker-compose.prod.yml
+    REGISTRY_PREFIX=ghcr.io/ethichadebe/lunga-ndaba     # lowercase, as ghcr stores it
+    LIVE_NETWORK=lunga-ndaba_default                    # the compose file pins the project name
+    # Host-wide: 13000-13002 and 18080-18083 are taken by the apps above.
+    BACKEND_PORT=3003
+    BACKEND_HEALTH_PATHS="/health /work"
+    CANDIDATE_BACKEND_PORT=13004
+    CANDIDATE_FRONTEND_PORT=18085
+    MIGRATION_STYLE=prisma
+    ;;
   *)
     echo "refused: unknown app '${app}'" >&2
     exit 2
