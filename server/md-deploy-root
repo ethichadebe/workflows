@@ -70,6 +70,27 @@ case "$app" in
     CANDIDATE_PORT=8092                              # see docs/static-destination.md
     ;;
 
+  livevote)
+    # A vote counter for a live stream. The page reads the stream's chat in the
+    # browser and renders a running tally; the stream operator adds its URL as
+    # a browser source. No API beside it, so it reuses the frontend actions
+    # askus and portfolio do.
+    #
+    # Static on purpose: counting in the browser means no backend, no secret,
+    # and a single folder of files — the only shape here that can be live the
+    # same day. If it ever needs a key it cannot expose (YouTube's chat API
+    # does), that is a different app of a different shape, not a change here.
+    #
+    # Confirm against the box before installing:
+    #   ls -la /opt/livevote
+    #   nginx -T | grep -A3 'listen 127.0.0.1:8093'
+    #   nginx -T | grep 'server_name vote.ethichadebe.me'
+    APP_KIND=static
+    FRONT_DIR=/opt/livevote                          # holds dist, dist.prev, dist.new
+    SITE_HOST=vote.ethichadebe.me                    # must match the nginx server_name
+    CANDIDATE_PORT=8093                              # see docs/static-destination.md
+    ;;
+
   accucery)
     # A compose app: several containers, built on CI and pulled here by digest.
     # The database is NOT one of them — it keeps running, untouched, across
